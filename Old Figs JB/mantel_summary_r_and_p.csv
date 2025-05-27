@@ -1,0 +1,9 @@
+"Locus","Compartment","Mantel_r","Mantel_p"
+"Fungi","Detritus",0.154596525095694,1e-04
+"Fungi","Water",0.0908679042065773,0.0032
+"Fungi","Inverts (Detritus)",0.118414554789542,0.0645
+"Fungi","Inverts (Water)",0.254371885831832,4e-04
+"Bacteria","Detritus",0.191727913139737,1e-04
+"Bacteria","Water",0.354050183454608,1e-04
+"Bacteria","Inverts (Detritus)",0.289009811918129,0.0014
+"Bacteria","Inverts (Water)",0.337776622864373,2e-04

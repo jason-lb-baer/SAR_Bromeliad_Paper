@@ -1,0 +1,4 @@
+"compartment","t_statistic","df","p_value","mean_slope_fungi","mean_slope_bacteria","mean_intercept_fungi","mean_intercept_bacteria"
+"Detritus",9.4238,1901.9,1.22e-20,0.093,0.0944,0.7305,0.7493
+"Water",228.4103,1379,0,0.0814,0.1576,0.7591,0.6651
+"Invertebrates",121.2435,1711.7,0,0.0477,0.1246,0.8883,0.6807

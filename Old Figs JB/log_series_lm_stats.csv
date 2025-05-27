@@ -1,0 +1,7 @@
+"Compartment","Locus","Predictor","r_squared","p_value","slope","n"
+"Inverts","Fungi","Invert.weight",0.141,0.0587,-0.01485,27
+"Detritus","Fungi","Detritus.weight",0.001,0.854,7e-04,32
+"Water","Fungi","Water.volume",0,0.962,0,32
+"Inverts","Bacteria","Invert.weight",0.001,0.906,-0.00076,31
+"Detritus","Bacteria","Detritus.weight",0.047,0.232,-3e-05,32
+"Water","Bacteria","Water.volume",0,0.905,1e-05,32

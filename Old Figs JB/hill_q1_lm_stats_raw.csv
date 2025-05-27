@@ -1,0 +1,5 @@
+"Compartment","Locus","Predictor","r_squared","p_value","slope","n"
+"Detritus","Fungi","Dry.weight.detritus",0.12427138593469,0.0478309267312426,0.490728707414293,32
+"Water","Fungi","Water.volume...in.lab...mL.",0.109558298484043,0.0642488245474958,0.00727529680533052,32
+"Detritus","Bacteria","Dry.weight.detritus",0.00850269642003493,0.615711532480204,1.54064127579753,32
+"Water","Bacteria","Water.volume...in.lab...mL.",0.115271115912545,0.0572907875928005,-0.0408378350349581,32
