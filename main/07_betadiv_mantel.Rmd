@@ -1,0 +1,1586 @@
+---
+title: "betadiv_mantel"
+output: html_document
+date: "2024-06-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(vegan)
+library(ggplot2)
+library(patchwork)
+library(MetBrewer)
+library(pals)
+```
+
+```{r}
+fung_regress_data_list <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/truly_nonpooled_fung_regress_data_list.rds")
+bact_regress_data_list <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/truly_nonpooled_bact_regress_data_list.rds")
+
+fung_inv_regress_dat <- fung_regress_data_list[[1]]
+fung_det_regress_dat <- fung_regress_data_list[[2]]
+fung_water_regress_dat <- fung_regress_data_list[[3]]
+
+fung_air_regress_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/truly_nonpooled_fung_air_data.rds")
+
+bact_inv_regress_dat <- bact_regress_data_list[[1]]
+bact_det_regress_dat <- bact_regress_data_list[[2]]
+bact_water_regress_dat <- bact_regress_data_list[[3]]
+
+bact_air_regress_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/truly_nonpooled_bact_air_data.rds")
+
+fung_data <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/culled_fung_asv_table_decontamed_nonpooled.rds")
+fung_data <- as.data.frame(t(fung_data))
+bact_data <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/culled_bact_asv_table_decontamed_nonpooled.rds")
+bact_data <- as.data.frame(t(bact_data))
+
+
+fung_rep_dat_full <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/fung_replication_data_v2.rds")
+
+bact_rep_dat_full <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/bact_replication_data_v2.rds")
+```
+
+
+```{r}
+mantel_and_plot <- function(asv_table, regress_data, compartment_abbrev, locus, compartment,
+                            wvol_scatter_color = "black", detwt_scatter_color = "black",
+                            wvol_line_color = "gray", detwt_line_color = "gray") {
+  sub_asvtab <- asv_table[grepl(compartment_abbrev, rownames(asv_table)),]
+  sub_asvtab <- sub_asvtab[,colSums(sub_asvtab)>0]
+  sub_asvtab <- sub_asvtab[order(row.names(sub_asvtab)), ]
+  
+  commcomp_distmat <- vegdist(sub_asvtab, method = "bray")
+  
+  detwt_tab <- dplyr::select(regress_data, sample, detritus_wt)
+  rownames(detwt_tab) <- NULL
+  detwt_tab <- tibble::column_to_rownames(detwt_tab, "sample")
+  detwt_tab <- detwt_tab[order(row.names(detwt_tab)),,drop=FALSE]
+  
+  
+  detwt_distmat <- vegdist(detwt_tab, "bray")
+  
+  wvol_tab <- dplyr::select(regress_data, sample, water_volume)
+  rownames(wvol_tab) <- NULL
+  wvol_tab <- tibble::column_to_rownames(wvol_tab, "sample")
+  wvol_tab <- wvol_tab[order(row.names(wvol_tab)),,drop=FALSE]
+  
+  wvol_distmat <- vegdist(wvol_tab, "bray")
+  
+  ifelse(
+    all(
+      colnames(as.data.frame(as.matrix(commcomp_distmat))) == colnames(as.data.frame(as.matrix(detwt_distmat)))
+      ),
+    print("all bros lined up correctly between matrices"), 
+    print("bros not lined up between matrices, check!"))
+  
+  # mantel
+  set.seed(2342)
+  detwt_mantel <- mantel(commcomp_distmat, detwt_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  print("finished one mantel, halfway there!")
+  
+  wvol_mantel <- mantel(commcomp_distmat, wvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  # plot
+  plot_dat <- data.frame(commcomp = as.vector(commcomp_distmat),
+                         detritus_wt = as.vector(detwt_distmat),
+                         water_volume = as.vector(wvol_distmat))
+  
+  detwt_plot = ggplot(plot_dat, aes(y = commcomp, x = detritus_wt)) + 
+    geom_point(size = 3, alpha = 0.35, color = detwt_scatter_color) + 
+    labs(x = "Detritus weight", y = "Bray-Curtis Dissimilarity", 
+         # subtitle = paste0("Mantel: r = ", round(detwt_mantel$statistic,4), ", ", "p = ", round(detwt_mantel$signif,4)),
+         title = paste0(locus, ", ", compartment)) + 
+    theme_classic() +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+  theme(axis.text = element_text(color = "black", size = 12),
+        axis.title = element_text(color = "black", size = 13)) 
+  
+  if (detwt_mantel$signif<=0.05) {
+    detwt_plot <- detwt_plot + stat_smooth(method = "lm", 
+                                                   formula = y ~ x, 
+                                                   geom = "smooth",
+                                                   se = F,
+                                                   color = detwt_line_color)
+  } else {
+    detwt_plot
+  }
+
+                                        
+  wvol_plot = ggplot(plot_dat, aes(y = commcomp, x = water_volume)) + 
+    geom_point(size = 3, alpha = 0.35, color = wvol_scatter_color) + 
+    labs(x = "Water volume", y = "Bray-Curtis Dissimilarity", 
+         # subtitle = paste0("Mantel: r = ", round(wvol_mantel$statistic,4), ", ", "p = ", round(wvol_mantel$signif,4)),
+         title = paste0(locus, ", ", compartment)) + 
+    theme_classic() +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+      theme(axis.text = element_text(color = "black", size = 12),
+        axis.title = element_text(color = "black", size = 13)) 
+  
+    if (wvol_mantel$signif<=0.05) {
+    wvol_plot <- wvol_plot + stat_smooth(method = "lm", 
+                                                   formula = y ~ x, 
+                                                   geom = "smooth",
+                                                   se = F,
+                                                   color = wvol_line_color)
+  } else {
+    wvol_plot
+  }
+
+  return(list(detwt_plot, wvol_plot))
+}
+
+
+fung_det_mplots <- mantel_and_plot(asv_table = fung_data,
+                      regress_data = fung_det_regress_dat,
+                      compartment_abbrev = ".D.",
+                      locus = "Fungi",
+                      compartment = "Detritus",
+                      
+                      detwt_scatter_color = stepped2()[8],
+                      detwt_line_color = stepped2()[6])
+
+fung_inv_mplots <- mantel_and_plot(asv_table = fung_data,
+                      regress_data = fung_inv_regress_dat,
+                      compartment_abbrev = ".I.",
+                      locus = "Fungi",
+                      compartment = "Invertebrates",
+                      
+                      detwt_scatter_color = stepped2()[16],
+                      detwt_line_color = stepped2()[14],
+                      wvol_scatter_color = stepped2()[20],
+                      wvol_line_color = stepped2()[18])
+
+fung_water_mplots <- mantel_and_plot(asv_table = fung_data,
+                      regress_data = fung_water_regress_dat,
+                      compartment_abbrev = "W",
+                      locus = "Fungi",
+                      compartment = "Water",
+                      
+                      wvol_scatter_color = stepped2()[4],
+                      wvol_line_color = stepped2()[2])
+
+
+bact_det_mplots <- mantel_and_plot(asv_table = bact_data,
+                      regress_data = bact_det_regress_dat,
+                      compartment_abbrev = "_D_",
+                      locus = "Bacteria",
+                      compartment = "Detritus",
+                      
+                      detwt_scatter_color = stepped2()[8],
+                      detwt_line_color = stepped2()[6])
+
+bact_inv_mplots <- mantel_and_plot(asv_table = bact_data,
+                      regress_data = bact_inv_regress_dat,
+                      compartment_abbrev = "_I_",
+                      locus = "Bacteria",
+                      compartment = "Invertebrates",
+                      
+                      detwt_scatter_color = stepped2()[16],
+                      detwt_line_color = stepped2()[14],
+                      wvol_scatter_color = stepped2()[20],
+                      wvol_line_color = stepped2()[18])
+
+bact_water_mplots <- mantel_and_plot(asv_table = bact_data,
+                      regress_data = bact_water_regress_dat,
+                      compartment_abbrev = "W02",
+                      locus = "Bacteria",
+                      compartment = "Water",
+                      
+                      wvol_scatter_color = stepped2()[4],
+                      wvol_line_color = stepped2()[2])
+  
+bact_water_mplots
+```
+
+
+Jason's code - Same as above but also outputs r and pvalues
+```{r}
+mantel_and_plot <- function(asv_table, regress_data, compartment_abbrev, locus, compartment,
+                            wvol_scatter_color = "black", detwt_scatter_color = "black",
+                            wvol_line_color = "gray", detwt_line_color = "gray") {
+  sub_asvtab <- asv_table[grepl(compartment_abbrev, rownames(asv_table)),]
+  sub_asvtab <- sub_asvtab[, colSums(sub_asvtab) > 0]
+  sub_asvtab <- sub_asvtab[order(row.names(sub_asvtab)), ]
+  
+  commcomp_distmat <- vegdist(sub_asvtab, method = "bray")
+  
+  detwt_tab <- dplyr::select(regress_data, sample, detritus_wt)
+  rownames(detwt_tab) <- NULL
+  detwt_tab <- tibble::column_to_rownames(detwt_tab, "sample")
+  detwt_tab <- detwt_tab[order(row.names(detwt_tab)), , drop = FALSE]
+  detwt_distmat <- vegdist(detwt_tab, "bray")
+  
+  wvol_tab <- dplyr::select(regress_data, sample, water_volume)
+  rownames(wvol_tab) <- NULL
+  wvol_tab <- tibble::column_to_rownames(wvol_tab, "sample")
+  wvol_tab <- wvol_tab[order(row.names(wvol_tab)), , drop = FALSE]
+  wvol_distmat <- vegdist(wvol_tab, "bray")
+  
+  if (!all(colnames(as.matrix(commcomp_distmat)) == colnames(as.matrix(detwt_distmat)))) {
+    warning("Bromeliad sample names not aligned between community and detritus distance matrices!")
+  }
+
+  # Mantel tests
+  set.seed(2342)
+  detwt_mantel <- mantel(commcomp_distmat, detwt_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  print("finished one mantel, halfway there!")
+  wvol_mantel <- mantel(commcomp_distmat, wvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  # Plot data
+  plot_dat <- data.frame(
+    commcomp = as.vector(commcomp_distmat),
+    detritus_wt = as.vector(detwt_distmat),
+    water_volume = as.vector(wvol_distmat)
+  )
+
+  # Detritus plot
+  detwt_plot <- ggplot(plot_dat, aes(y = commcomp, x = detritus_wt)) + 
+    geom_point(size = 3, alpha = 0.35, color = detwt_scatter_color) + 
+    labs(
+      x = "Detritus weight", y = "Bray-Curtis Dissimilarity", 
+      title = paste0(locus, ", ", compartment)
+    ) +
+    theme_classic() +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+    theme(axis.text = element_text(color = "black", size = 12),
+          axis.title = element_text(color = "black", size = 13))
+
+  if (detwt_mantel$signif <= 0.05) {
+    detwt_plot <- detwt_plot + stat_smooth(method = "lm", formula = y ~ x, se = FALSE, color = detwt_line_color)
+  }
+
+  # Water volume plot
+  wvol_plot <- ggplot(plot_dat, aes(y = commcomp, x = water_volume)) + 
+    geom_point(size = 3, alpha = 0.35, color = wvol_scatter_color) + 
+    labs(
+      x = "Water volume", y = "Bray-Curtis Dissimilarity", 
+      title = paste0(locus, ", ", compartment)
+    ) +
+    theme_classic() +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+    theme(axis.text = element_text(color = "black", size = 12),
+          axis.title = element_text(color = "black", size = 13))
+
+  if (wvol_mantel$signif <= 0.05) {
+    wvol_plot <- wvol_plot + stat_smooth(method = "lm", formula = y ~ x, se = FALSE, color = wvol_line_color)
+  }
+
+  return(list(
+    detritus_plot = detwt_plot,
+    water_plot = wvol_plot,
+    detritus_r = detwt_mantel$statistic,
+    detritus_p = detwt_mantel$signif,
+    water_r = wvol_mantel$statistic,
+    water_p = wvol_mantel$signif
+  ))
+}
+
+mantel_results <- list(
+  fung_det = mantel_and_plot(fung_data, fung_det_regress_dat, ".D.", "Fungi", "Detritus",
+                              detwt_scatter_color = stepped2()[8], detwt_line_color = stepped2()[6]),
+  fung_wat = mantel_and_plot(fung_data, fung_water_regress_dat, "W", "Fungi", "Water",
+                              wvol_scatter_color = stepped2()[4], wvol_line_color = stepped2()[2]),
+  fung_inv = mantel_and_plot(fung_data, fung_inv_regress_dat, ".I.", "Fungi", "Invertebrates",
+                              detwt_scatter_color = stepped2()[16], detwt_line_color = stepped2()[14],
+                              wvol_scatter_color = stepped2()[20], wvol_line_color = stepped2()[18]),
+  bact_det = mantel_and_plot(bact_data, bact_det_regress_dat, "_D_", "Bacteria", "Detritus",
+                              detwt_scatter_color = stepped2()[8], detwt_line_color = stepped2()[6]),
+  bact_wat = mantel_and_plot(bact_data, bact_water_regress_dat, "W02", "Bacteria", "Water",
+                              wvol_scatter_color = stepped2()[4], wvol_line_color = stepped2()[2]),
+  bact_inv = mantel_and_plot(bact_data, bact_inv_regress_dat, "_I_", "Bacteria", "Invertebrates",
+                              detwt_scatter_color = stepped2()[16], detwt_line_color = stepped2()[14],
+                              wvol_scatter_color = stepped2()[20], wvol_line_color = stepped2()[18])
+)
+
+mantel_summary <- tibble::tibble(
+  Locus = rep(c("Fungi", "Bacteria"), each = 4),
+  Compartment = rep(c("Detritus", "Water", "Inverts (Detritus)", "Inverts (Water)"), times = 2),
+  Mantel_r = c(
+    mantel_results$fung_det$detritus_r,
+    mantel_results$fung_wat$water_r,
+    mantel_results$fung_inv$detritus_r,
+    mantel_results$fung_inv$water_r,
+    mantel_results$bact_det$detritus_r,
+    mantel_results$bact_wat$water_r,
+    mantel_results$bact_inv$detritus_r,
+    mantel_results$bact_inv$water_r
+  ),
+  Mantel_p = c(
+    mantel_results$fung_det$detritus_p,
+    mantel_results$fung_wat$water_p,
+    mantel_results$fung_inv$detritus_p,
+    mantel_results$fung_inv$water_p,
+    mantel_results$bact_det$detritus_p,
+    mantel_results$bact_wat$water_p,
+    mantel_results$bact_inv$detritus_p,
+    mantel_results$bact_inv$water_p
+  )
+)
+
+write.csv(mantel_summary, "mantel_summary_r_and_p.csv", row.names = FALSE)
+
+
+```
+
+
+
+-----------
+
+JB code to run mantel correlograms
+
+
+attempt 2 (ironically) - works
+```{r}
+mantel_and_plot_with_correlog <- function(asv_table, regress_data, compartment_abbrev, locus, compartment,
+                            wvol_scatter_color = "black", detwt_scatter_color = "black",
+                            wvol_line_color = "gray", detwt_line_color = "gray",
+                            do_correlog = FALSE, correlog_variable = "water_volume",
+                            correlog_breaks = 3, correlog_break_pts = NULL) {
+
+  # Subset and prepare ASV table
+  sub_asvtab <- asv_table[grepl(compartment_abbrev, rownames(asv_table)),]
+  sub_asvtab <- sub_asvtab[,colSums(sub_asvtab)>0]
+  sub_asvtab <- sub_asvtab[order(row.names(sub_asvtab)), ]
+  
+  # Community distance matrix
+  commcomp_distmat <- vegdist(sub_asvtab, method = "bray")
+  
+  # Detritus weight
+  detwt_tab <- dplyr::select(regress_data, sample, detritus_wt)
+  detwt_tab <- tibble::column_to_rownames(detwt_tab, "sample")
+  detwt_tab <- detwt_tab[order(row.names(detwt_tab)),,drop=FALSE]
+  detwt_distmat <- vegdist(detwt_tab, "bray")
+  
+  # Water volume
+  wvol_tab <- dplyr::select(regress_data, sample, water_volume)
+  wvol_tab <- tibble::column_to_rownames(wvol_tab, "sample")
+  wvol_tab <- wvol_tab[order(row.names(wvol_tab)),,drop=FALSE]
+  wvol_distmat <- vegdist(wvol_tab, "bray")
+  
+  # Sanity check
+  ifelse(all(colnames(as.matrix(commcomp_distmat)) == colnames(as.matrix(detwt_distmat))),
+         print("Matrices aligned"), print("Mismatch in matrix alignment!"))
+  
+  # Mantel tests
+  set.seed(2342)
+  detwt_mantel <- mantel(commcomp_distmat, detwt_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  print("Finished detritus Mantel test")
+  wvol_mantel <- mantel(commcomp_distmat, wvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+
+  # Plotting data
+  plot_dat <- data.frame(commcomp = as.vector(commcomp_distmat),
+                         detritus_wt = as.vector(detwt_distmat),
+                         water_volume = as.vector(wvol_distmat))
+  
+  detwt_plot <- ggplot(plot_dat, aes(x = detritus_wt, y = commcomp)) + 
+    geom_point(size = 3, alpha = 0.35, color = detwt_scatter_color) + 
+    labs(title = paste0(locus, ", ", compartment), x = "Detritus weight", y = "Bray-Curtis Dissimilarity") +
+    theme_classic() +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+    theme(axis.text = element_text(size = 12), axis.title = element_text(size = 13)) +
+    if (detwt_mantel$signif <= 0.05) stat_smooth(method = "lm", formula = y ~ x, se = FALSE, color = detwt_line_color)
+
+  wvol_plot <- ggplot(plot_dat, aes(x = water_volume, y = commcomp)) + 
+    geom_point(size = 3, alpha = 0.35, color = wvol_scatter_color) + 
+    labs(title = paste0(locus, ", ", compartment), x = "Water volume", y = "Bray-Curtis Dissimilarity") +
+    theme_classic() +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+    theme(axis.text = element_text(size = 12), axis.title = element_text(size = 13)) +
+    if (wvol_mantel$signif <= 0.05) stat_smooth(method = "lm", formula = y ~ x, se = FALSE, color = wvol_line_color)
+
+  correlog_result <- NULL
+
+  # Optional Mantel correlogram
+  if (do_correlog) {
+  env_dist_vector <- if (correlog_variable == "water_volume") wvol_tab else detwt_tab
+  
+  if (is.null(correlog_break_pts)) {
+    correlog_result <- mantel.correlog(
+      D.eco = commcomp_distmat,
+      D.geo = dist(env_dist_vector, method = "euclidean"),
+      n.class = correlog_breaks
+    )
+  } else {
+    correlog_result <- mantel.correlog(
+      D.eco = commcomp_distmat,
+      D.geo = dist(env_dist_vector, method = "euclidean"),
+      break.pts = correlog_break_pts
+    )
+  }
+  
+  print("Mantel correlogram done")
+  plot(correlog_result, main = paste("Mantel Correlogram:", locus, compartment))
+}
+  
+  return(list(detwt_plot = detwt_plot, 
+              wvol_plot = wvol_plot, 
+              correlogram = correlog_result))
+}
+
+fungal_det_corr <- mantel_and_plot_with_correlog(
+  asv_table = fung_data,
+  regress_data = fung_det_regress_dat,
+  compartment_abbrev = ".D.",
+  locus = "Fungi",
+  compartment = "Detritus",
+  do_correlog = TRUE,
+  correlog_variable = "detritus_wt",
+  correlog_breaks = 4
+)
+
+fungal_water_corr <- mantel_and_plot_with_correlog(
+  asv_table = fung_data,
+  regress_data = fung_water_regress_dat,
+  compartment_abbrev = "W",
+  locus = "Fungi",
+  compartment = "Water",
+  do_correlog = TRUE,
+  correlog_variable = "water_volume",
+  correlog_breaks = 4
+)
+
+bact_det_corr <- mantel_and_plot_with_correlog(
+  asv_table = bact_data,
+  regress_data = bact_det_regress_dat,
+  compartment_abbrev = "_D_",
+  locus = "Bacteria",
+  compartment = "Detritus",
+  do_correlog = TRUE,
+  correlog_variable = "detritus_wt",
+  correlog_breaks = 4
+)
+
+bact_water_corr <- mantel_and_plot_with_correlog(
+  asv_table = bact_data,
+  regress_data = bact_water_regress_dat,
+  compartment_abbrev = "W",
+  locus = "Bacteria",
+  compartment = "Water",
+  do_correlog = TRUE,
+  correlog_variable = "water_volume",
+  correlog_breaks = 4
+)
+
+# Combine into 2x2 figure
+combined_mantel_plot <- (fungal_det_corr$detwt_plot + fungal_water_corr$wvol_plot) /
+                        (bact_det_corr$detwt_plot + bact_water_corr$wvol_plot) +
+  plot_annotation(title = "Figure: Mantel Correlations Across Loci and Compartments")
+
+# Save
+ggsave("Figure_Mantel_Combined.svg", combined_mantel_plot, width = 12, height = 8)
+ggsave("Figure_Mantel_Combined.pdf", combined_mantel_plot, width = 12, height = 8)
+
+
+
+#THIS WORKS TO DO THE ABOVE + MANTEL CORRELOG SUMMARY TABLES
+# Load libraries
+library(ggplot2)
+
+# Make sure the plotting device is reset
+graphics.off()
+
+# Output directories
+output_dir <- "mantel_correlograms"
+table_dir <- "mantel_correlograms"
+
+if (!dir.exists(output_dir)) dir.create(output_dir)
+if (!dir.exists(table_dir)) dir.create(table_dir)
+
+# Loop through all configurations
+for (cfg in correlog_config) {
+  cat("Running:", cfg$name, "\n")
+  
+  # Run the correlogram
+  results <- mantel_and_plot_with_correlog(
+    asv_table = cfg$data,
+    regress_data = cfg$meta,
+    compartment_abbrev = cfg$abbrev,
+    locus = cfg$locus,
+    compartment = cfg$comp,
+    do_correlog = TRUE,
+    correlog_variable = cfg$size,
+    correlog_breaks = 4
+  )
+  
+  # Set plot title
+  title_text <- paste("Mantel Correlogram for", cfg$locus, "-", cfg$comp)
+
+  # Save plot to PDF
+  pdf(file = file.path(output_dir, paste0(cfg$name, "_correlogram.pdf")), width = 7, height = 6)
+  
+  if (!is.null(results$correlogram)) {
+    plot(results$correlogram)
+    title(main = title_text)
+  } else {
+    plot.new()
+    title(main = title_text)
+    text(0.5, 0.5, "No correlogram returned", cex = 1.5)
+  }
+
+  dev.off()
+
+  # === Generate and save summary table ===
+  corr <- results$correlogram
+  
+  if (!is.null(corr)) {
+    res <- corr$mantel.res
+    col_names <- colnames(res)
+
+    # Safely build the summary table
+    summary_df <- data.frame(
+      class_index = res[, "class.index"],
+      n_comparisons = res[, "n.dist"],
+      mantel_r = res[, "Mantel.cor"],
+      p_mantel = res[, "Pr(Mantel)"],
+      p_corrected = res[, "Pr(corrected)"]
+    )
+
+    # Save the summary table
+    write.csv(summary_df, file = file.path(table_dir, paste0(cfg$name, "_summary.csv")), row.names = FALSE)
+  } else {
+    cat("No correlogram result for", cfg$name, "- skipping summary table\n")
+  }
+}
+
+
+
+#BELOW WORKS FOR ONE PLOT & SUMMARY TABLE
+library(ggplot2)
+
+# Run the correlogram for fungi x detritus
+fungal_det_corr <- mantel_and_plot_with_correlog(
+  asv_table = fung_data,
+  regress_data = fung_det_regress_dat,
+  compartment_abbrev = ".D.",
+  locus = "Fungi",
+  compartment = "Detritus",
+  do_correlog = TRUE,
+  correlog_variable = "detritus_wt",
+  correlog_breaks = 4
+)
+
+# Extract the correlogram object
+corr <- fungal_det_corr$correlogram
+
+if (!is.null(corr)) {
+  res <- corr$mantel.res
+  
+  # Check column names for clarity
+  print(colnames(res))
+  
+  # Extract relevant columns for summary
+  summary_df <- data.frame(
+    class_index = res[, "class.index"],
+    n_comparisons = res[, "n.dist"],
+    mantel_r = res[, "Mantel.cor"],
+    p_mantel = res[, "Pr(Mantel)"],
+    p_corrected = res[, "Pr(corrected)"]
+  )
+
+  print(summary_df)
+
+  # Optional: write to file
+  write.csv(summary_df, "fungi_detritus_mantel_summary.csv", row.names = FALSE)
+
+} else {
+  print("No correlogram results returned.")
+}
+
+
+
+
+#computing euclidian distance to set custom breaks
+library(ggplot2)
+
+# Step 1: Calculate distance and define custom break points (e.g., quantiles)
+env_dist <- dist(fung_det_regress_dat$detritus_wt, method = "euclidean")
+
+# Use quantiles to define breakpoints for 4 bins (or customize as needed)
+custom_break_pts <- as.numeric(quantile(as.vector(env_dist), probs = seq(0, 1, length.out = 5)))
+
+# Step 2: Run the correlogram with explicit break points
+fungal_det_corr <- mantel_and_plot_with_correlog(
+  asv_table = fung_data,
+  regress_data = fung_det_regress_dat,
+  compartment_abbrev = ".D.",
+  locus = "Fungi",
+  compartment = "Detritus",
+  do_correlog = TRUE,
+  correlog_variable = "detritus_wt",
+  correlog_break_pts = custom_break_pts  # <-- this is the key change
+)
+
+# Step 3: Extract and summarize
+corr <- fungal_det_corr$correlogram
+
+if (!is.null(corr)) {
+  res <- corr$mantel.res
+
+  summary_df <- data.frame(
+    class_index = res[, "class.index"],
+    n_comparisons = res[, "n.dist"],
+    mantel_r = res[, "Mantel.cor"],
+    p_mantel = res[, "Pr(Mantel)"],
+    p_corrected = res[, "Pr(corrected)"]
+  )
+
+  print(summary_df)
+
+  write.csv(summary_df, "fungi_detritus_mantel_summary_custom_breaks.csv", row.names = FALSE)
+
+} else {
+  print("No correlogram results returned.")
+}
+```
+
+
+Within-bromeliad beta diversity vs bromeliad size
+```{r}
+# ------------------------------------------------------------------------------
+# This script analyzes beta dispersion (within-group community variability)
+# in microbial communities (fungi and bacteria) across bromeliads,
+# and tests whether dispersion changes with island size (e.g., water volume, detritus weight).
+#
+# It:
+# - Computes Bray–Curtis distances on ASV tables for selected compartments
+# - Calculates distance-to-centroid per sample using `betadisper()` from `vegan`
+# - Averages dispersion per bromeliad (island unit)
+# - Merges results with bromeliad size metadata (e.g., water_volume, detritus_wt)
+# - Fits linear models to test if beta dispersion is related to island size
+# - Generates scatterplots with R² and p-values annotated; adds trendlines when p < 0.05
+# - Plots results for fungi and bacteria in water and detritus compartments
+# - Combines plots into a single figure (Figure 6) and saves as SVG and PDF
+# ------------------------------------------------------------------------------
+
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(broom)
+
+plot_betadispersion_vs_size <- function(asv_table, metadata, compartment_abbrev, locus_label, 
+                                        size_variable = "water_volume", 
+                                        title = NULL, return_data = FALSE,
+                                        point_color = "black", line_color = "gray40") {
+  # Filter sample names for the compartment abbreviation
+  matched_samples <- metadata %>%
+    filter(grepl(compartment_abbrev, sample), Locus == locus_label)
+
+  # Subset ASV table to those samples
+  subset_asv <- asv_table[rownames(asv_table) %in% matched_samples$sample, ]
+  subset_asv <- subset_asv[match(matched_samples$sample, rownames(subset_asv)), ]
+  matched_samples <- matched_samples[match(rownames(subset_asv), matched_samples$sample), ]
+
+  # Drop ASVs with all-zero counts
+  subset_asv <- subset_asv[, colSums(subset_asv) > 0]
+  
+  # Sanity check
+  stopifnot(all(rownames(subset_asv) == matched_samples$sample))
+  
+  # Bray-Curtis distance
+  bray_dist <- vegdist(subset_asv, method = "bray")
+
+  # Grouping: bromeliad ID
+  grouping <- matched_samples$Bro1
+  bd <- betadisper(bray_dist, grouping)
+
+  # Extract distances to centroid
+  dispersion_df <- data.frame(
+    sample = names(bd$distances),
+    Bro1 = grouping,
+    distance_to_centroid = bd$distances
+  )
+
+  # Average per bromeliad
+  dispersion_summary <- dispersion_df %>%
+    group_by(Bro1) %>%
+    summarise(mean_dispersion = mean(distance_to_centroid), .groups = "drop")
+
+  # Merge with island size
+  island_size <- matched_samples %>%
+    select(Bro1, !!sym(size_variable)) %>%
+    distinct()
+  
+  merged_df <- left_join(dispersion_summary, island_size, by = "Bro1")
+  merged_df[[size_variable]] <- log10(merged_df[[size_variable]] + 1e-6)
+
+  # Fit linear model
+  f <- as.formula(paste("mean_dispersion ~", size_variable))
+  lm_model <- lm(f, data = merged_df)
+  model_summary <- summary(lm_model)
+  r2 <- round(model_summary$r.squared, 3)
+  raw_pval <- model_summary$coefficients[2, 4]
+  pval <- signif(raw_pval, 3)  # for display
+  annot_text <- paste0("R² = ", r2, ", p = ", pval)
+
+  # Default title if none provided
+  if (is.null(title)) {
+    title <- paste0(locus_label, " × ", size_variable, ": Betadispersion vs. Island Size")
+  }
+
+  # Create base plot
+  p <- ggplot(merged_df, aes_string(x = size_variable, y = "mean_dispersion")) +
+  geom_point(size = 2, alpha = 0.7, color = point_color) +
+  scale_x_log10() +
+  annotate("text", x = Inf, y = -Inf, hjust = 1.1, vjust = -1.5,
+           label = annot_text, size = 4.5, fontface = "italic") +
+  theme_classic() +
+  labs(title = title,
+       x = paste0("log(", size_variable, ")"),
+       y = "Mean Distance to Centroid") +
+  theme(plot.title = element_text(hjust = 0.5))
+  
+
+  # Add trendline only if p < 0.05
+  if (raw_pval < 0.05) {
+    p <- p + geom_smooth(method = "lm", se = TRUE, color = line_color)
+  }
+
+  if (return_data) {
+    return(list(data = merged_df, plot = p, model = lm_model))
+  } else {
+    return(p)
+  }
+}
+
+
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(patchwork)
+library(MetBrewer)
+
+# Pull colors from MetBrewer
+# Using 4 distinct colors from Isfahan2 palette for plot and line color
+palette <- MetBrewer::met.brewer("Isfahan1")
+fungi_color <- palette[3]
+fungi_line <- palette[2]
+bact_color <- palette[5]
+bact_line <- palette[6]
+
+# Create 4 plots, each with color styling
+fungi_water_plot <- plot_betadispersion_vs_size(
+  asv_table = fung_data,
+  metadata = fung_water_regress_dat,
+  compartment_abbrev = "W",
+  locus_label = "SSU",
+  size_variable = "water_volume",
+  title = "Fungi × Water",
+  point_color = fungi_color,
+  line_color = fungi_line
+)
+
+fungi_det_plot <- plot_betadispersion_vs_size(
+  asv_table = fung_data,
+  metadata = fung_det_regress_dat,
+  compartment_abbrev = ".D.",
+  locus_label = "SSU",
+  size_variable = "detritus_wt",
+  title = "Fungi × Detritus",
+  point_color = fungi_color,
+  line_color = fungi_line
+)
+
+bact_water_plot <- plot_betadispersion_vs_size(
+  asv_table = bact_data,
+  metadata = bact_water_regress_dat,
+  compartment_abbrev = "W",
+  locus_label = "16S",
+  size_variable = "water_volume",
+  title = "Bacteria × Water",
+  point_color = bact_color,
+  line_color = bact_line
+)
+
+bact_det_plot <- plot_betadispersion_vs_size(
+  asv_table = bact_data,
+  metadata = bact_det_regress_dat,
+  compartment_abbrev = "_D_",
+  locus_label = "16S",
+  size_variable = "detritus_wt",
+  title = "Bacteria × Detritus",
+  point_color = bact_color,
+  line_color = bact_line
+)
+# Combine into a multi-panel figure
+final_plot <- (fungi_det_plot + fungi_water_plot) /  
+              (bact_det_plot + bact_water_plot) +
+              plot_annotation(title = "Figure 6. Beta Dispersion vs. Island Size")
+
+# Save outputs
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/Figure6_BetaDispersion.svg", final_plot, width = 12, height = 8)
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/Figure6_BetaDispersion.pdf", final_plot, width = 12, height = 8)
+```
+
+
+
+Stats (linear regressions) for above
+```{r}
+# ------------------------------------------------------------------------------
+# This script extracts statistical summaries from linear models testing the 
+# relationship between beta dispersion and island size in fungal and bacterial 
+# communities across bromeliads.
+#
+# It:
+# - Computes Bray–Curtis distances and calculates beta dispersion (distance to centroid)
+#   for each bromeliad using `betadisper()` from the vegan package
+# - Averages dispersion values per bromeliad (island unit)
+# - Merges with bromeliad size metrics (e.g., water volume, detritus weight)
+# - Fits linear models of mean dispersion ~ island size for each group
+# - Extracts and returns key model statistics: slope, R², p-value, and sample size
+# - Outputs a summary table comparing results across compartments and taxa
+# ------------------------------------------------------------------------------
+
+
+extract_model_stats <- function(asv_table, metadata, compartment_abbrev, locus_label, size_variable) {
+  # Recode locus names
+  locus_name <- case_when(
+    locus_label == "SSU" ~ "Fungi",
+    locus_label == "16S" ~ "Bacteria",
+    TRUE ~ locus_label
+  )
+
+  # Filter metadata
+  matched_samples <- metadata %>%
+    filter(grepl(compartment_abbrev, sample), Locus == locus_label)
+
+  subset_asv <- asv_table[rownames(asv_table) %in% matched_samples$sample, ]
+  subset_asv <- subset_asv[match(matched_samples$sample, rownames(subset_asv)), ]
+  matched_samples <- matched_samples[match(rownames(subset_asv), matched_samples$sample), ]
+
+  subset_asv <- subset_asv[, colSums(subset_asv) > 0]
+  bray_dist <- vegdist(subset_asv, method = "bray")
+  grouping <- matched_samples$Bro1
+  bd <- betadisper(bray_dist, grouping)
+
+  dispersion_df <- data.frame(
+    sample = names(bd$distances),
+    Bro1 = grouping,
+    distance_to_centroid = bd$distances
+  )
+
+  dispersion_summary <- dispersion_df %>%
+    group_by(Bro1) %>%
+    summarise(mean_dispersion = mean(distance_to_centroid), .groups = "drop")
+
+  island_size <- matched_samples %>%
+    select(Bro1, !!sym(size_variable)) %>%
+    distinct()
+
+  merged_df <- left_join(dispersion_summary, island_size, by = "Bro1")
+
+  # Model
+  f <- as.formula(paste("mean_dispersion ~", size_variable))
+  model <- lm(f, data = merged_df)
+  smry <- summary(model)
+
+  tibble(
+    Locus = locus_name,         # <- Use the recoded label here
+    Compartment = size_variable,
+    Intercept = coef(model)[1],
+    Slope = coef(model)[2],
+    R2 = smry$r.squared,
+    p_value = smry$coefficients[2, 4],
+    N = nrow(merged_df)
+  )
+}
+
+results <- bind_rows(
+  extract_model_stats(fung_data, fung_water_regress_dat, "W", "SSU", "water_volume"),
+  extract_model_stats(fung_data, fung_det_regress_dat, ".D.", "SSU", "detritus_wt"),
+  extract_model_stats(bact_data, bact_water_regress_dat, "W", "16S", "water_volume"),
+  extract_model_stats(bact_data, bact_det_regress_dat, "_D_", "16S", "detritus_wt")
+)
+
+write.csv(results, "betadispersion_model_stats.csv", row.names = FALSE)
+```
+
+
+
+end jason code
+
+--------------
+
+Air plots
+```{r}
+# fungi
+fung_air_asvtab <- fung_data[grepl("S1|S2", rownames(fung_data)),]
+fung_air_asvtab <- fung_air_asvtab[,colSums(fung_air_asvtab)>0]
+
+fung_air_distmat <- vegdist(fung_air_asvtab, method = "bray")
+
+fung_airvol_tab <- dplyr::select(fung_air_regress_dat, sample, air_volume)
+rownames(fung_airvol_tab) <- NULL
+fung_airvol_tab <- tibble::column_to_rownames(fung_airvol_tab, "sample")
+
+all(rownames(fung_air_asvtab) == rownames(fung_airvol_tab))
+
+fung_airvol_distmat <- vegdist(fung_airvol_tab, "bray")
+
+# mantel
+fung_air_mantel <- mantel(fung_air_distmat, fung_airvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+
+
+# plot
+fung_air_plot_dat <- data.frame(commcomp = as.vector(fung_air_distmat),
+                       air_volume = as.vector(fung_airvol_distmat))
+
+fung_air_plot = ggplot(fung_air_plot_dat, aes(y = commcomp, x = air_volume)) + 
+  geom_point(size = 3, alpha = 0.7, color = stepped2()[11]) + 
+  labs(x = "Air volume", y = "Bray-Curtis Dissimilarity", 
+       #subtitle = paste0("Mantel: r = ", round(fung_air_mantel$statistic,4), ", ", "p = ", round(fung_air_mantel$signif,4)),
+       title = paste("Fungi,", "Air volume")) + 
+  # stat_smooth(method = "lm", 
+  #           formula = y ~ x, 
+  #           geom = "smooth",
+  #           se = F,
+  #           color = met.brewer("Renoir")[7]) +
+  theme_classic() +
+    theme(axis.text = element_text(color = "black", size = 12),
+        axis.title = element_text(color = "black", size = 13)) 
+
+# bacteria
+bact_air_asvtab <- bact_data[grepl("_S1_|_S2_", rownames(bact_data)),]
+bact_air_asvtab <- bact_air_asvtab[,colSums(bact_air_asvtab)>0]
+
+bact_air_distmat <- vegdist(bact_air_asvtab, method = "bray")
+
+bact_airvol_tab <- dplyr::select(bact_air_regress_dat, sample, air_volume)
+rownames(bact_airvol_tab) <- NULL
+bact_airvol_tab <- tibble::column_to_rownames(bact_airvol_tab, "sample")
+
+all(rownames(bact_air_asvtab) == rownames(bact_airvol_tab))
+
+bact_airvol_distmat <- vegdist(bact_airvol_tab, "bray")
+
+# mantel
+bact_air_mantel <- mantel(bact_air_distmat, bact_airvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+
+
+# plot
+bact_air_plot_dat <- data.frame(commcomp = as.vector(bact_air_distmat),
+                       air_volume = as.vector(bact_airvol_distmat))
+
+bact_air_plot = ggplot(bact_air_plot_dat, aes(y = commcomp, x = air_volume)) + 
+  geom_point(size = 3, alpha = 0.7, color = stepped2()[11]) + 
+  # stat_smooth(method = "lm",
+  #           formula = y ~ x,
+  #           geom = "smooth",
+  #           se = F,
+  #           color = met.brewer("Renoir")[7]) +
+  labs(x = "Air volume", y = "Bray-Curtis Dissimilarity", 
+       #subtitle = paste0("Mantel: r = ", round(bact_air_mantel$statistic,4), ", ", "p = ", round(bact_air_mantel$signif,4)),
+       title = paste("Bacteria,", "Air volume")) + 
+  theme_classic() +
+    theme(axis.text = element_text(color = "black", size = 12),
+        axis.title = element_text(color = "black", size = 13)) 
+
+```
+
+
+
+```{r}
+# all_fung_mplots <- fung_inv_mplots[[2]] + fung_inv_mplots[[1]] + 
+#   fung_water_mplots[[2]] + fung_det_mplots[[1]] + fung_air_plot + plot_layout(nrow = 3)
+# 
+# ggsave("../figures/truly_nonpool_fung_betadiv_mantel_plots_with_trendline.png", all_fung_mplots, width=9.5, height=12)
+# 
+# all_bact_mplots <- bact_inv_mplots[[2]] + bact_inv_mplots[[1]] + 
+#   bact_water_mplots[[2]] + bact_det_mplots[[1]] + bact_air_plot + plot_layout(nrow = 3)
+#   
+# ggsave("../figures/truly_nonpool_bact_betadiv_mantel_plots_with_trendline.png", all_bact_mplots, width=9.5, height=12)
+
+all_plots <- fung_det_mplots[[1]] + fung_water_mplots[[2]] + fung_inv_mplots[[1]] + fung_inv_mplots[[2]] +
+  bact_det_mplots[[1]] + bact_water_mplots[[2]] + bact_inv_mplots[[1]] + bact_inv_mplots[[2]] + 
+  plot_layout(nrow=2)
+  
+ggsave("/Users/jasonbaer/Downloads/SAR paper/all_betadiv_mantel_plots_fixed_yaxis.png", all_plots, width=16, height=7.5)
+ggsave("/Users/jasonbaer/Downloads/SAR paper/all_betadiv_mantel_plots_fixed_yaxis.pdf", all_plots, width=16, height=7.5)
+
+library(svglite)
+# Save using svglite
+svglite::svglite(
+  filename = "/Users/jasonbaer/Downloads/SAR paper/all_betadiv_mantel_plots_fixed_yaxis.svg",
+  width = 16,
+  height = 7.5
+)
+print(all_plots)
+dev.off()
+
+air_plots <- fung_air_plot + bact_air_plot
+
+ggsave("/Users/jasonbaer/Downloads/SAR paper/air_mantel_plots.png", air_plots, width= 10, height=4.5)
+ggsave("/Users/jasonbaer/Downloads/SAR paper/air_mantel_plots.pdf", air_plots, width= 10, height=4.5)
+
+library(unikn)
+library(pals)
+seecol(pals::stepped2())
+  
+```
+
+
+get y-intercepts 
+```{r}
+mantel_yint <- function(asv_table, regress_data, compartment_abbrev, locus, compartment,
+                            wvol_scatter_color = "black", detwt_scatter_color = "black",
+                            wvol_line_color = "gray", detwt_line_color = "gray") {
+  sub_asvtab <- asv_table[grepl(compartment_abbrev, rownames(asv_table)),]
+  sub_asvtab <- sub_asvtab[,colSums(sub_asvtab)>0]
+  sub_asvtab <- sub_asvtab[order(row.names(sub_asvtab)), ]
+  
+  commcomp_distmat <- vegdist(sub_asvtab, method = "bray")
+  
+  detwt_tab <- dplyr::select(regress_data, sample, detritus_wt)
+  rownames(detwt_tab) <- NULL
+  detwt_tab <- tibble::column_to_rownames(detwt_tab, "sample")
+  detwt_tab <- detwt_tab[order(row.names(detwt_tab)),,drop=FALSE]
+  
+  
+  detwt_distmat <- vegdist(detwt_tab, "bray")
+  
+  wvol_tab <- dplyr::select(regress_data, sample, water_volume)
+  rownames(wvol_tab) <- NULL
+  wvol_tab <- tibble::column_to_rownames(wvol_tab, "sample")
+  wvol_tab <- wvol_tab[order(row.names(wvol_tab)),,drop=FALSE]
+  
+  wvol_distmat <- vegdist(wvol_tab, "bray")
+  
+  ifelse(
+    all(
+      colnames(as.data.frame(as.matrix(commcomp_distmat))) == colnames(as.data.frame(as.matrix(detwt_distmat)))
+      ),
+    print("all bros lined up correctly between matrices"), 
+    print("bros not lined up between matrices, check!"))
+  
+  # mantel
+  set.seed(2342)
+  detwt_mantel <- mantel(commcomp_distmat, detwt_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  print("finished one mantel, halfway there!")
+  
+  wvol_mantel <- mantel(commcomp_distmat, wvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  # plot
+  man_dat <- data.frame(commcomp = as.vector(commcomp_distmat),
+                         detritus_wt = as.vector(detwt_distmat),
+                         water_volume = as.vector(wvol_distmat))
+  
+  
+  detwt_lm <- lm(man_dat$commcomp ~ man_dat$detritus_wt)
+  
+  wvol_lm <- lm(man_dat$commcomp ~ man_dat$water_volume)
+  
+  
+  return(
+    c("detwt_intercept" = detwt_lm$coefficients[1],
+      "wvol_intercept" = wvol_lm$coefficients[1])
+  )
+}
+
+
+fung_detritus <- mantel_yint(asv_table = fung_data,
+                             regress_data = fung_det_regress_dat,
+                             compartment_abbrev = ".D.",
+                             locus = "Fungi",
+                             compartment = "Detritus")
+
+fung_water <- mantel_yint(asv_table = fung_data,
+                             regress_data = fung_water_regress_dat,
+                             compartment_abbrev = "W",
+                             locus = "Fungi",
+                             compartment = "Water")
+
+fung_invert <- mantel_yint(asv_table = fung_data,
+                             regress_data = fung_inv_regress_dat,
+                             compartment_abbrev = ".I.",
+                             locus = "Fungi",
+                             compartment = "Invertebrates")
+
+
+bact_detritus <- mantel_yint(asv_table = bact_data,
+                             regress_data = bact_det_regress_dat,
+                             compartment_abbrev = "_D_",
+                             locus = "Bacteria",
+                             compartment = "Detritus")
+
+bact_water <- mantel_yint(asv_table = bact_data,
+                             regress_data = bact_water_regress_dat,
+                             compartment_abbrev = "W02",
+                             locus = "Bacteria",
+                             compartment = "Detritus")
+
+bact_invert_wv <- mantel_yint(asv_table = bact_data,
+                             regress_data = bact_inv_regress_dat,
+                             compartment_abbrev = "_I_",
+                             locus = "Bacteria",
+                             compartment = "Detritus")
+
+
+
+
+```
+
+
+get y-intercepts 
+```{r}
+mantel_lm <- function(asv_table, regress_data, compartment_abbrev, locus, compartment,
+                            wvol_scatter_color = "black", detwt_scatter_color = "black",
+                            wvol_line_color = "gray", detwt_line_color = "gray") {
+  sub_asvtab <- asv_table[grepl(compartment_abbrev, rownames(asv_table)),]
+  sub_asvtab <- sub_asvtab[,colSums(sub_asvtab)>0]
+  sub_asvtab <- sub_asvtab[order(row.names(sub_asvtab)), ]
+  
+  commcomp_distmat <- vegdist(sub_asvtab, method = "bray")
+  
+  detwt_tab <- dplyr::select(regress_data, sample, detritus_wt)
+  rownames(detwt_tab) <- NULL
+  detwt_tab <- tibble::column_to_rownames(detwt_tab, "sample")
+  detwt_tab <- detwt_tab[order(row.names(detwt_tab)),,drop=FALSE]
+  
+  
+  detwt_distmat <- vegdist(detwt_tab, "bray")
+  
+  wvol_tab <- dplyr::select(regress_data, sample, water_volume)
+  rownames(wvol_tab) <- NULL
+  wvol_tab <- tibble::column_to_rownames(wvol_tab, "sample")
+  wvol_tab <- wvol_tab[order(row.names(wvol_tab)),,drop=FALSE]
+  
+  wvol_distmat <- vegdist(wvol_tab, "bray")
+  
+  ifelse(
+    all(
+      colnames(as.data.frame(as.matrix(commcomp_distmat))) == colnames(as.data.frame(as.matrix(detwt_distmat)))
+      ),
+    print("all bros lined up correctly between matrices"), 
+    print("bros not lined up between matrices, check!"))
+  
+  # mantel
+  set.seed(2342)
+  detwt_mantel <- mantel(commcomp_distmat, detwt_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  print("finished one mantel, halfway there!")
+  
+  wvol_mantel <- mantel(commcomp_distmat, wvol_distmat, method = "spearman", permutations = 9999, na.rm = TRUE)
+  
+  # plot
+  man_dat <- data.frame(commcomp = as.vector(commcomp_distmat),
+                         detritus_wt = as.vector(detwt_distmat),
+                         water_volume = as.vector(wvol_distmat))
+  
+  
+  # detwt_lm <- lm(man_dat$commcomp ~ man_dat$detritus_wt)
+  # 
+  # wvol_lm <- lm(man_dat$commcomp ~ man_dat$water_volume)
+  
+  
+  return(
+    man_dat
+  )
+}
+
+
+fung_detritus <- mantel_lm(asv_table = fung_data,
+                             regress_data = fung_det_regress_dat,
+                             compartment_abbrev = ".D.",
+                             locus = "Fungi",
+                             compartment = "Detritus")
+
+fung_water <- mantel_lm(asv_table = fung_data,
+                             regress_data = fung_water_regress_dat,
+                             compartment_abbrev = "W",
+                             locus = "Fungi",
+                             compartment = "Water")
+
+fung_invert <- mantel_lm(asv_table = fung_data,
+                             regress_data = fung_inv_regress_dat,
+                             compartment_abbrev = ".I.",
+                             locus = "Fungi",
+                             compartment = "Invertebrates")
+
+
+bact_detritus <- mantel_lm(asv_table = bact_data,
+                             regress_data = bact_det_regress_dat,
+                             compartment_abbrev = "_D_",
+                             locus = "Bacteria",
+                             compartment = "Detritus")
+
+bact_water <- mantel_lm(asv_table = bact_data,
+                             regress_data = bact_water_regress_dat,
+                             compartment_abbrev = "W02",
+                             locus = "Bacteria",
+                             compartment = "Detritus")
+
+bact_invert_wv <- mantel_lm(asv_table = bact_data,
+                             regress_data = bact_inv_regress_dat,
+                             compartment_abbrev = "_I_",
+                             locus = "Bacteria",
+                             compartment = "Detritus")
+
+
+
+
+```
+Pairwise t-tests
+
+```{r}
+# bootstrap function
+bfun <- \(x, y, R=1000, seed=134) {
+  FUN <- \() {
+    i <- sample(seq_len(length(x)), replace=TRUE)
+    y <- y[i]
+    x <- x[i]
+    return(lm(y ~ x)$coefficients)
+
+    #return()
+  }
+  set.seed(seed)
+  r <- t(replicate(R, FUN()))
+  bootdist <- r[, 2]
+
+  return(bootdist)
+
+}
+
+```
+
+```{r}
+fung_det_dw <- bfun(y = fung_detritus$commcomp, x = fung_detritus$detritus_wt, R = 1000, seed = 4) 
+
+fung_wat_wv <- bfun(y = fung_water$commcomp, x = fung_water$water_volume, R = 1000, seed = 12)
+
+fung_inv_wv <- bfun(y = fung_invert$commcomp, x = fung_invert$water_volume, R = 1000, seed = 111)
+
+
+bact_det_dw <- bfun(y = bact_detritus$commcomp, x = bact_detritus$detritus_wt, R = 1000, seed = 41) 
+
+bact_wat_wv <- bfun(y = bact_water$commcomp, x = bact_water$water_volume, R = 1000, seed = 121)
+
+bact_inv_wv <- bfun(y = bact_invert_wv$commcomp, x = bact_invert_wv$water_volume, R = 1000, seed = 311)
+
+bact_inv_dw <- bfun(y = bact_invert_wv$commcomp, x = bact_invert_wv$detritus_wt, R = 1000, seed = 311)
+
+```
+
+```{r}
+# within locus, across compartments
+library(rstatix)
+
+long_dat1 <- data.frame(type = c(rep("fung_detritus_dw", length(fung_det_dw)),
+                                 rep("fung_inverts_wv", length(fung_inv_wv)),
+                                 rep("fung_water_wv", length(fung_wat_wv))
+                                 ),
+                            slope = c(fung_det_dw,
+                                  fung_inv_wv,
+                                  fung_wat_wv)
+)
+
+fung_within_locus <- rstatix::pairwise_t_test(long_dat1, slope ~ type, p.adjust.method = "BH", pool.sd=FALSE, detailed = TRUE)
+
+long_dat2 <- data.frame(type = c(rep("bact_inverts_dw", length(bact_inv_dw)),
+                                 rep("bact_detritus_dw", length(bact_det_dw)),
+                                 rep("bact_inverts_wv", length(bact_inv_wv)),
+                                 rep("bact_water_wv", length(bact_wat_wv))
+                                 ),
+                            slope = c(bact_inv_dw,
+                                  bact_det_dw,
+                                  bact_inv_wv,
+                                  bact_wat_wv)
+)
+
+bact_within_locus <- rstatix::pairwise_t_test(long_dat2, slope ~ type, p.adjust.method = "BH", pool.sd=FALSE, detailed = TRUE)
+
+## prep within locus
+all_within_locus <- rbind(fung_within_locus, bact_within_locus)
+all_within_locus <- select(all_within_locus, group1, group2, statistic, df, p.adj)
+
+all_within_locus_renamed <- all_within_locus
+
+all_within_locus_renamed[all_within_locus_renamed=="fung_detritus_dw"] <- "Fungi, Detritus"
+all_within_locus_renamed[all_within_locus_renamed=="fung_inverts_wv"] <- "Fungi, Invertebrates (Water volume)"
+all_within_locus_renamed[all_within_locus_renamed=="fung_water_wv"] <- "Fungi, Water"
+
+all_within_locus_renamed[all_within_locus_renamed=="bact_detritus_dw"] <- "Bacteria, Detritus"
+all_within_locus_renamed[all_within_locus_renamed=="bact_inverts_dw"] <- "Bacteria, Invertebrates (Detritus weight)"
+all_within_locus_renamed[all_within_locus_renamed=="bact_inverts_wv"] <- "Bacteria, Invertebrates (Water volume)"
+all_within_locus_renamed[all_within_locus_renamed=="bact_water_wv"] <- "Bacteria, Water"
+
+all_within_locus_renamed$p.adj <- round(all_within_locus_renamed$p.adj, digits = 3)
+#all_within_locus_renamed <- select(all_within_locus_renamed, group1, group2, p.adj)
+
+write.csv(all_within_locus_renamed, "/Users/jasonbaer/Downloads/SAR Paper/outputs/for_manuscript/betadiv_bootslope_ttest_within_locus.csv")
+
+
+# between locus withiin compartment
+# long_data <- data.frame(type = c(
+#                                  rep("fung_detritus_dw", length(fung_det_dw)),
+#                                  rep("fung_inverts_wv", length(fung_inv_wv)),
+#                                  rep("fung_water_wv", length(fung_wat_wv)),
+# 
+#                                  #rep("bact_inverts_dw", length(bact_dw[[1]])),
+#                                  rep("bact_detritus_dw", length(bact_det_dw)),
+#                                  rep("bact_inverts_wv", length(bact_inv_wv)),
+#                                  rep("bact_water_wv", length(bact_wat_wv))
+# 
+#                                  ),
+#                         slope = c(
+#                                   fung_det_dw,
+#                                   fung_inv_wv,
+#                                   fung_wat_wv,
+# 
+#                                   bact_det_dw,
+#                                   bact_inv_wv,
+#                                   bact_wat_wv
+#                                   ))
+
+btwn_inv_wv <- t.test(fung_inv_wv, bact_inv_wv)
+btwn_det_dw <- t.test(fung_det_dw, bact_det_dw)
+btwn_wat_wv <- t.test(fung_wat_wv, bact_wat_wv)
+
+btwn_list <- list(btwn_inv_wv, btwn_det_dw, btwn_wat_wv) 
+
+new_btwn_list <- list()
+
+for (i in 1:length(btwn_list)) {
+  mydat = data.frame(group = btwn_list[[i]]$data.name,
+                     statistic = btwn_list[[i]]$statistic,
+                     df = btwn_list[[i]]$parameter,
+                     pval = btwn_list[[i]]$p.value
+                     )
+  
+  new_btwn_list[[i]] <- mydat
+  
+}
+
+full_btwn <- do.call("rbind", new_btwn_list)
+
+### correcting P-values for multiple comparisons
+library(multtest)  
+
+# Set seed for repeatability
+set.seed(2024)
+  
+adj_p_values = mt.rawp2adjp(full_btwn$pval)
+    
+adj_p_mat = adj_p_values$adjp[, c("rawp", "BH")]
+  
+adj_p_ordered = adj_p_mat[,2][order(adj_p_values$index)]
+
+full_btwn$adjusted_pval <- adj_p_ordered
+
+
+full_btwn_renamed <- full_btwn
+
+full_btwn_renamed$group2 <- full_btwn$group
+full_btwn_renamed <- full_btwn_renamed %>% select(group, group2, statistic, df, adjusted_pval)
+
+full_btwn_renamed$group <- c("Fungi, Invertebrates (Water volume)",
+                             "Fungi, Detritus",
+                             "Fungi, Water")
+
+full_btwn_renamed$group2 <- c("Bacteria, Invertebrates (Water volume)",
+                             "Bacteria, Detritus",
+                             "Bacteria, Water")
+
+full_btwn_renamed$adjusted_pval <- round(full_btwn_renamed$adjusted_pval, digits = 3)
+
+write.csv(full_btwn_renamed, "/Users/jasonbaer/Downloads/SAR Paper/outputs/betadiv_bootslope_ttest_btwn_loci.csv")
+
+```
+
+
+Jason edit - same code + pvalue and intercept for within comparisons
+```{r}
+# ------------------------------------------------------------------------------
+# This script performs within-locus comparisons of beta dispersion slope estimates
+# across compartments, using bootstrapped linear model results.
+#
+# It:
+# - Generates bootstrapped slope distributions for fungi and bacteria × compartment
+# - Performs pairwise t-tests on bootstrapped slopes within each locus
+# - Appends mean slope and intercept per group for interpretability
+# - Renames groups and saves final summary table
+# ------------------------------------------------------------------------------
+
+# ---- Bootstrap function ----
+bfun <- \(x, y, R=1000, seed=134) {
+  FUN <- \() {
+    i <- sample(seq_len(length(x)), replace=TRUE)
+    y <- y[i]
+    x <- x[i]
+    return(lm(y ~ x)$coefficients)
+  }
+  set.seed(seed)
+  r <- t(replicate(R, FUN()))
+  return(tibble(intercept = r[,1], slope = r[,2]))
+}
+
+# ---- Generate bootstrapped distributions ----
+fung_det_dw     <- bfun(y = fung_detritus$commcomp, x = fung_detritus$detritus_wt, R = 1000, seed = 4) 
+fung_wat_wv     <- bfun(y = fung_water$commcomp,    x = fung_water$water_volume,  R = 1000, seed = 12)
+fung_inv_wv     <- bfun(y = fung_invert$commcomp,   x = fung_invert$water_volume, R = 1000, seed = 111)
+
+bact_det_dw     <- bfun(y = bact_detritus$commcomp, x = bact_detritus$detritus_wt, R = 1000, seed = 41) 
+bact_water_wv   <- bfun(y = bact_water$commcomp,    x = bact_water$water_volume,   R = 1000, seed = 121)
+bact_inv_wv     <- bfun(y = bact_invert_wv$commcomp,x = bact_invert_wv$water_volume,R = 1000, seed = 311)
+bact_inverts_dw <- bfun(y = bact_invert_wv$commcomp,x = bact_invert_wv$detritus_wt, R = 1000, seed = 411)
+
+# ---- Assign group labels ----
+fung_det_dw$group     <- "fung_detritus_dw"
+fung_wat_wv$group     <- "fung_water_wv"
+fung_inv_wv$group     <- "fung_inverts_wv"
+
+bact_det_dw$group     <- "bact_detritus_dw"
+bact_water_wv$group   <- "bact_water_wv"
+bact_inv_wv$group     <- "bact_inverts_wv"
+bact_inverts_dw$group <- "bact_inverts_dw"
+
+# ---- Combine into within-locus datasets ----
+fung_boots <- bind_rows(fung_det_dw, fung_wat_wv, fung_inv_wv)
+bact_boots <- bind_rows(bact_det_dw, bact_water_wv, bact_inv_wv, bact_inverts_dw)
+
+# ---- Helper: run tests and merge summaries ----
+run_pairwise_tests <- function(boot_df, organism_label) {
+  # Summary per group
+  summary_df <- boot_df %>%
+    group_by(group) %>%
+    summarise(
+      mean_intercept = mean(intercept),
+      mean_slope     = mean(slope),
+      .groups = "drop"
+    )
+  
+  # T-tests on slopes
+  slope_tests <- rstatix::pairwise_t_test(
+    data = boot_df,
+    formula = slope ~ group,
+    p.adjust.method = "BH",
+    pool.sd = FALSE,
+    detailed = TRUE
+  )
+  
+  # Merge group-wise summaries
+  summary1 <- summary_df %>% rename(group1 = group,
+                                    mean_intercept1 = mean_intercept,
+                                    mean_slope1 = mean_slope)
+  summary2 <- summary_df %>% rename(group2 = group,
+                                    mean_intercept2 = mean_intercept,
+                                    mean_slope2 = mean_slope)
+
+  merged <- slope_tests %>%
+    left_join(summary1, by = "group1") %>%
+    left_join(summary2, by = "group2") %>%
+    select(group1, group2, statistic, df, p.adj,
+           mean_intercept1, mean_slope1,
+           mean_intercept2, mean_slope2)
+
+  return(merged)
+}
+
+# ---- Run pairwise comparisons ----
+fung_results <- run_pairwise_tests(fung_boots, "Fungi")
+bact_results <- run_pairwise_tests(bact_boots, "Bacteria")
+
+# ---- Combine and rename for output ----
+within_locus_table <- bind_rows(fung_results, bact_results)
+
+within_locus_table$group1 <- recode(within_locus_table$group1,
+  "fung_detritus_dw" = "Fungi, Detritus",
+  "fung_inverts_wv" = "Fungi, Invertebrates (Water volume)",
+  "fung_water_wv"   = "Fungi, Water",
+  "bact_detritus_dw" = "Bacteria, Detritus",
+  "bact_inverts_dw"  = "Bacteria, Invertebrates (Detritus weight)",
+  "bact_inverts_wv"  = "Bacteria, Invertebrates (Water volume)",
+  "bact_water_wv"    = "Bacteria, Water"
+)
+
+within_locus_table$group2 <- recode(within_locus_table$group2,
+  "fung_detritus_dw" = "Fungi, Detritus",
+  "fung_inverts_wv" = "Fungi, Invertebrates (Water volume)",
+  "fung_water_wv"   = "Fungi, Water",
+  "bact_detritus_dw" = "Bacteria, Detritus",
+  "bact_inverts_dw"  = "Bacteria, Invertebrates (Detritus weight)",
+  "bact_inverts_wv"  = "Bacteria, Invertebrates (Water volume)",
+  "bact_water_wv"    = "Bacteria, Water"
+)
+
+# ---- Round numeric values and export ----
+within_locus_table <- within_locus_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+write.csv(within_locus_table,
+          "/Users/jasonbaer/Downloads/SAR Paper/outputs/betadiv_bootslope_ttest_within_locus.csv",
+          row.names = FALSE)
+```
+
+
+Jason's code for between comparisons
+```{r}
+library(tidyr)
+
+# ------------------------------------------------------------------------------
+# Between-locus comparisons: Fungi vs Bacteria in each compartment
+# ------------------------------------------------------------------------------
+
+# Step 1: Create combined bootstraps for shared compartments
+detritus_boots <- bind_rows(
+  fung_det_dw %>% mutate(locus = "Fungi"),
+  bact_det_dw %>% mutate(locus = "Bacteria")
+)
+
+water_boots <- bind_rows(
+  fung_wat_wv %>% mutate(locus = "Fungi"),
+  bact_water_wv %>% mutate(locus = "Bacteria")
+)
+
+inverts_boots <- bind_rows(
+  fung_inv_wv %>% mutate(locus = "Fungi"),
+  bact_inv_wv %>% mutate(locus = "Bacteria")
+)
+
+# Step 2: Function to test between loci
+run_between_locus_test <- function(data, compartment_label) {
+  ttest <- t.test(slope ~ locus, data = data)
+  
+  means <- data %>%
+    group_by(locus) %>%
+    summarise(
+      mean_slope = mean(slope),
+      mean_intercept = mean(intercept),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(names_from = locus, values_from = c(mean_slope, mean_intercept))
+  
+  tibble(
+    compartment = compartment_label,
+    t_statistic = round(ttest$statistic, 4),
+    df = round(ttest$parameter, 1),
+    p_value = signif(ttest$p.value, 3),
+    mean_slope_fungi = round(means$mean_slope_Fungi, 4),
+    mean_slope_bacteria = round(means$mean_slope_Bacteria, 4),
+    mean_intercept_fungi = round(means$mean_intercept_Fungi, 4),
+    mean_intercept_bacteria = round(means$mean_intercept_Bacteria, 4)
+  )
+}
+
+# Step 3: Run comparisons
+between_results <- bind_rows(
+  run_between_locus_test(detritus_boots, "Detritus"),
+  run_between_locus_test(water_boots, "Water"),
+  run_between_locus_test(inverts_boots, "Invertebrates")
+)
+
+# Step 4: Save results
+write.csv(
+  between_results,
+  "/Users/jasonbaer/Downloads/SAR Paper/outputs/betadiv_bootslope_ttest_between_locus.csv",
+  row.names = FALSE
+)
+
+# Preview
+print(between_results)
+```
+

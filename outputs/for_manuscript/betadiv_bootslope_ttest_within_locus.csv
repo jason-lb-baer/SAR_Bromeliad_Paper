@@ -1,0 +1,10 @@
+"","group1","group2","statistic","df","p.adj"
+"1","Fungi, Detritus","Fungi, Invertebrates (Water volume)",125.179051012353,1204.17168977102,0
+"2","Fungi, Detritus","Fungi, Water",66.3950648131636,1923.17828167191,0
+"3","Fungi, Invertebrates (Water volume)","Fungi, Water",-90.9642395442246,1301.05496231313,0
+"4","Bacteria, Detritus","Bacteria, Invertebrates (Detritus weight)",-44.6528843055281,1056.0041831899,0
+"5","Bacteria, Detritus","Bacteria, Invertebrates (Water volume)",-55.9955861304248,1054.01555045447,0
+"6","Bacteria, Detritus","Bacteria, Water",-199.243963460193,1165.39646419584,0
+"7","Bacteria, Invertebrates (Detritus weight)","Bacteria, Invertebrates (Water volume)",-8.7559363192891,1997.36854096927,0
+"8","Bacteria, Invertebrates (Detritus weight)","Bacteria, Water",-65.4255473254101,1608.58793653668,0
+"9","Bacteria, Invertebrates (Water volume)","Bacteria, Water",-53.9107654187146,1591.51489794733,0

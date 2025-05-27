@@ -1,0 +1,1300 @@
+---
+title: "11_rank_abundance"
+output: html_document
+date: "2024-07-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(vegan)
+library(ggplot2)
+library(patchwork)
+library(ggpubr)
+```
+
+Goal: build ranked-abundance curves on the non-rarefied data by compartment and locus 
+
+```{r}
+fung_data <- readRDS("/Users/jasonbaer/Downloads/SAR Paper/intermediates/culled_fung_asv_table_decontamed_nonpooled.rds")
+head(fung_data)
+
+
+bact_data <- readRDS("/Users/jasonbaer/Downloads/SAR Paper/intermediates/culled_bact_asv_table_decontamed_nonpooled.rds")
+head(bact_data)
+
+
+fung_rep_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/fung_replication_data_v2.rds")
+fung_rep_dat <- fung_rep_dat %>% group_by(bro_and_comp) %>% mutate(newnum = n()) %>% ungroup
+glimpse(fung_rep_dat)
+
+bact_rep_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/bact_replication_data_v2.rds")
+bact_rep_dat <- bact_rep_dat %>% group_by(bro_and_comp) %>% mutate(newnum = n()) %>% ungroup
+glimpse(bact_rep_dat)
+
+bro_metadata <- read.csv("/Users/jasonbaer/Downloads/SAR paper/metadata/sar_metadata_clean - Sheet1.csv")
+glimpse(bro_metadata)
+```
+
+```{r}
+fung_inv_data <- fung_data[,grepl(".I.", names(fung_data))]
+fung_inv_data <- fung_inv_data[rowSums(fung_inv_data)>0,]
+
+fung_det_data <- fung_data[,grepl(".D.", names(fung_data))]
+fung_det_data <- fung_det_data[rowSums(fung_det_data)>0,]
+
+fung_water_data <- fung_data[,grepl("W02|WPool", names(fung_data))]
+fung_water_data <- fung_water_data[rowSums(fung_water_data)>0,]
+
+fung_air_data <- fung_data[,grepl("S1|S2", names(fung_data))]
+fung_air_data <- fung_air_data[rowSums(fung_air_data)>0,]
+```
+
+```{r}
+make_rankabun_table <- function(asv_table, compartment) {
+  dat = data.frame(asv_name = rownames(asv_table),
+                   asv_sum = rowSums(asv_table))
+  
+  dat$proportion = dat$asv_sum / sum(dat$asv_sum)
+  dat = arrange(dat, desc(proportion))
+  
+  dat$rank = seq_along(1:length(dat$proportion))
+  
+  dat$compart = rep(compartment, length(dat$proportion))
+  
+  return(dat)
+}
+
+
+fung_inv_summ <- make_rankabun_table(fung_inv_data, "Invertebrates")
+
+fung_det_summ <- make_rankabun_table(fung_det_data, "Detritus")
+
+fung_water_summ <- make_rankabun_table(fung_water_data, "Water")
+
+fung_air_summ <- make_rankabun_table(fung_air_data, "Air")
+
+
+all_fung_dat <- do.call("rbind", list(fung_inv_summ, fung_det_summ, fung_water_summ, fung_air_summ))
+
+
+fung_pl <- ggplot(all_fung_dat, aes(x = rank, y = log(proportion), color = compart)) +
+  geom_point() +
+  scale_color_manual(values = MetBrewer::met.brewer("Tara", 4)) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+        panel.background=element_blank(),
+        legend.text = element_text(size=12, color = "black"),
+        legend.title = element_text(size=13),
+        axis.title = element_text(size=14),
+        axis.text = element_text(size=12, color="black")) +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0))) +
+  theme(axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
+  labs(title = "Fungi", x = "Rank" , y = "log(Proportion)", color = "Compartment")
+
+#ggsave("../figures/fung_log_rankabun_collected.png", fung_pl, width=7, height=5)
+
+```
+
+```{r}
+# rankabun_plot <- function(rankabun_table, color = "black", my_title) {
+# 
+#   pl <- ggplot(rankabun_table, aes(x = rank, y = log(proportion))) +
+#     geom_point(color = color) +
+#     theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+#           panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+#           panel.background=element_blank()) +
+#           #axis.title = element_text(size=14),
+#           #axis.text = element_text(size=12, color="black"),
+#           #title=element_text(size=14)) +
+#     theme(axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0))) +
+#     theme(axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
+#     labs(title = my_title, x = "Rank" , y = "log(Proportion)")
+#   
+# }
+# 
+# fung_inv_plot <- rankabun_plot(fung_inv_summ, my_title = "Fungi, Invertebrates")
+# fung_det_plot <- rankabun_plot(fung_det_summ, my_title = "Fungi, Detritus")
+# fung_water_plot <- rankabun_plot(fung_water_summ, my_title = "Fungi, Water (W02 and WPool)")
+# fung_air_plot  <- rankabun_plot(fung_air_summ, my_title = "Fungi, Air")
+
+#all_fung_plots = fung_inv_plot + fung_det_plot + fung_water_plot + fung_air_plot
+
+
+#ggsave("../figures/fung_log_rankabun_v1.png", all_fung_plots, width=10, height=7)
+```
+
+
+```{r}
+bact_inv_data <- bact_data[,grepl("_I_", names(bact_data))]
+bact_inv_data <- bact_inv_data[rowSums(bact_inv_data)>0,]
+
+bact_det_data <- bact_data[,grepl("_D_", names(bact_data))]
+bact_det_data <- bact_det_data[rowSums(bact_det_data)>0,]
+
+bact_water_data <- bact_data[,grepl("W02", names(bact_data))]
+bact_water_data <- bact_water_data[rowSums(bact_water_data)>0,]
+
+bact_air_data <- bact_data[,grepl("_S1_|_S2_", names(bact_data))]
+bact_air_data <- bact_air_data[rowSums(bact_air_data)>0,]
+```
+
+```{r}
+
+bact_inv_summ <- make_rankabun_table(bact_inv_data, "Invertebrates")
+
+bact_det_summ <- make_rankabun_table(bact_det_data, "Detritus")
+
+bact_water_summ <- make_rankabun_table(bact_water_data, "Water")
+
+bact_air_summ <- make_rankabun_table(bact_air_data, "Air")
+
+
+all_bact_dat <- do.call("rbind", list(bact_inv_summ, bact_det_summ, bact_water_summ, bact_air_summ))
+
+
+bact_pl <- ggplot(all_bact_dat, aes(x = rank, y = log(proportion), color = compart)) +
+  geom_point() +
+  scale_color_manual(values = MetBrewer::met.brewer("Tara", 4)) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+        panel.background=element_blank(),
+        legend.text = element_text(size=12, color = "black"),
+        legend.title = element_text(size=13),
+        axis.title = element_text(size=14),
+        axis.text = element_text(size=12, color="black")) +
+        #title=element_text(size=14)) +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0))) +
+  theme(axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0))) +
+  labs(title = "Bacteria", x = "Rank" , y = "log(Proportion)", color = "Compartment")
+
+#ggsave("../figures/bact_log_rankabun_collected.png", bact_pl, width=7, height=5)
+
+```
+
+```{r}
+# both plots
+
+my_plots <- ggarrange(fung_pl, bact_pl, common.legend = TRUE, legend = "bottom")
+
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/ranked_abundance_plots.png", width=10, height=5.5)
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/ranked_abundance_plots.pdf", width=10, height=5.5)
+```
+
+
+```{r}
+# bact_inv_plot <- rankabun_plot(bact_inv_summ, color = "violetred4", my_title = "Bacteria, Invertebrates")
+# bact_det_plot <- rankabun_plot(bact_det_summ, color = "violetred4", my_title = "Bacteria, Detritus")
+# bact_water_plot <- rankabun_plot(bact_water_summ, color = "violetred4", my_title = "Bacteria, Water (W02)")
+# bact_air_plot  <- rankabun_plot(bact_air_summ, color = "violetred4", my_title = "Bacteria, Air")
+# 
+# all_bact_plots = bact_inv_plot + bact_det_plot + bact_water_plot + bact_air_plot
+# 
+# ggsave("../figures/bact_log_rankabun_v1.png", all_bact_plots, width=10, height=7)
+
+```
+
+
+## Zoom in?
+
+```{r}
+cut_table <- function(rankabun_table, denominator) {
+  tbl_len <- length(rankabun_table$proportion)
+  
+  new_len = round(tbl_len/denominator, 0)
+  
+  new_tbl <- rankabun_table[1:new_len,]
+  
+  return(new_tbl)
+}
+
+
+fung_inv_zoom <- cut_table(fung_inv_summ, 5)
+fung_inv_zoom_plot <- rankabun_plot(fung_inv_zoom, my_title = "Fungi zoom, Invertebrates")
+
+fung_det_zoom <- cut_table(fung_det_summ,5)
+fung_det_zoom_plot <- rankabun_plot(fung_det_zoom, my_title = "Fungi zoom, Detritus")
+
+fung_water_zoom <- cut_table(fung_water_summ,5)
+fung_water_zoom_plot <- rankabun_plot(fung_water_zoom, my_title = "Fungi zoom, Water (W02 and WPool)")
+
+fung_air_zoom <- cut_table(fung_air_summ,5)
+fung_air_zoom_plot <- rankabun_plot(fung_air_zoom, my_title = "Fungi zoom, Air")
+
+fung_zoom <- fung_inv_zoom_plot + fung_det_zoom_plot + fung_water_zoom_plot + fung_air_zoom_plot
+
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/fung_log_rankabun_zoom_v1.png", fung_zoom, width=10, height=7)
+
+```
+
+```{r}
+bact_inv_zoom <- cut_table(bact_inv_summ, 10)
+bact_inv_zoom_plot <- rankabun_plot(bact_inv_zoom, color = "violetred4", my_title = "Bacteria zoom, Invertebrates")
+
+bact_det_zoom <- cut_table(bact_det_summ, 10)
+bact_det_zoom_plot <- rankabun_plot(bact_det_zoom, color = "violetred4", my_title = "Bacteria zoom, Detritus")
+
+bact_water_zoom <- cut_table(bact_water_summ, 10)
+bact_water_zoom_plot <- rankabun_plot(bact_water_zoom, color = "violetred4", my_title = "Bacteria zoom, Water (W02)")
+
+bact_air_zoom <- cut_table(bact_air_summ, 10)
+bact_air_zoom_plot <- rankabun_plot(bact_air_zoom, color = "violetred4", my_title = "Bacteria zoom, Air")
+
+bact_zoom <- bact_inv_zoom_plot + bact_det_zoom_plot + bact_water_zoom_plot + bact_air_zoom_plot
+
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/bact_log_rankabun_zoom_v1.png", bact_zoom, width=10, height=7)
+
+```
+
+
+--------------
+
+Jason's additions for disproportionate effects
+
+more realistic looking rank abundance curves. Starts from raw counts, pools technical reps, sums ASVs, divides by total to get proportion, then log transforms proportion -- USE THIS
+```{r}
+# ------------------------------------------------------------------------------
+# This script generates rank-abundance plots (RADs) for bacteria and fungi 
+# across bromeliad compartments. It:
+# - Pools technical replicates per bromeliad-compartment from raw ASV count tables
+# - Calculates relative abundances and species ranks
+# - Constructs semi-log RADs (log proportion vs. rank) for each bromeliad
+# - Plots the RADs split by taxon (fungi/bacteria) and bromeliad ID
+# - Saves the combined plots as a .svg figure
+# ------------------------------------------------------------------------------
+
+# Load libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(MetBrewer)
+library(patchwork)
+
+# ---------- Helper function to calculate rank-abundance ----------
+make_rankabun_table <- function(asv_table, bro_id, compartment_label, locus_label) {
+  dat <- data.frame(
+    asv_name = rownames(asv_table),
+    asv_sum = rowSums(asv_table)
+  )
+  
+  dat <- dat %>%
+    filter(asv_sum > 0) %>%
+    mutate(
+      proportion = asv_sum / sum(asv_sum),
+      rank = rank(-proportion, ties.method = "first"),
+      Bro1 = bro_id,
+      Compartment = compartment_label,
+      Locus = locus_label
+    )
+  
+  return(dat)
+}
+
+# ---------- Function to build rank-abundance data for a given ASV table ----------
+build_rankabun_by_bro <- function(asv_data, rep_metadata, locus_label, bro_ids) {
+  all_dfs <- list()
+  
+  for (bro in bro_ids) {
+    samples_this_bro <- rep_metadata %>% filter(Bro1 == bro)
+    
+    for (comp in unique(samples_this_bro$newCompartment)) {
+      sample_names <- samples_this_bro %>%
+        filter(newCompartment == comp) %>%
+        pull(sample)
+      
+      if (length(sample_names) == 0) next
+      
+      sub_data <- asv_data[, colnames(asv_data) %in% sample_names, drop = FALSE]
+      sub_data <- sub_data[rowSums(sub_data) > 0, , drop = FALSE]
+      
+      if (nrow(sub_data) == 0) next
+      
+      df <- make_rankabun_table(sub_data, bro, comp, locus_label)
+      all_dfs[[paste0(bro, "_", comp)]] <- df
+    }
+  }
+  
+  bind_rows(all_dfs)
+}
+
+# ---------- Define bromeliads to include ----------
+example_bros <- c("BR1", "BR10", "BR23", "BR17", "BR30", "BR7")
+
+# ---------- Generate rank-abundance data ----------
+fung_rank_abun <- build_rankabun_by_bro(fung_data, fung_rep_dat, "Fungi", example_bros)
+bact_rank_abun <- build_rankabun_by_bro(bact_data, bact_rep_dat, "Bacteria", example_bros)
+
+# Combine
+all_rank_abun <- bind_rows(fung_rank_abun, bact_rank_abun)
+
+# ---------- Plot function ----------
+make_rank_plot <- function(df_sub) {
+  bro <- unique(df_sub$Bro1)
+  locus <- unique(df_sub$Locus)
+  
+  ggplot(df_sub, aes(x = rank, y = log(proportion), color = Compartment)) +
+    geom_point(size = 1.5) +
+    scale_color_manual(values = MetBrewer::met.brewer("Tara", 4)) +
+    labs(
+      title = paste0(locus, " — ", bro),
+      x = "Rank",
+      y = "log(Proportion)",
+      color = "Compartment"
+    ) +
+    theme_minimal(base_size = 10) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 11),
+      legend.position = "top"
+    )
+}
+
+# ---------- Generate plots ----------
+fung_plots <- fung_rank_abun %>%
+  split(.$Bro1) %>%
+  lapply(make_rank_plot)
+
+bact_plots <- bact_rank_abun %>%
+  split(.$Bro1) %>%
+  lapply(make_rank_plot)
+
+# ---------- Combine with patchwork ----------
+final_plot <- wrap_plots(fung_plots, nrow = 1) /
+               wrap_plots(bact_plots, nrow = 1)
+
+# ---------- Save ----------
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/rank_abundance_patchwork_FungiTop_BactBottom.svg",
+       plot = final_plot, width = 16, height = 8)
+```
+
+
+nlsLM - USE THIS
+```{r}
+# ------------------------------------------------------------------------------
+# This script fits log-series models to rank-abundance distributions (RADs)
+# for microbial communities (fungi and bacteria) across bromeliads.
+#
+# It:
+# - Pools technical replicates by bromeliad and compartment from raw ASV tables
+# - Calculates relative abundances and species ranks per group
+# - Fits a log-series model (Ar = C * x^r / r) to each RAD using non-linear regression
+# - Extracts the slope parameter x (a measure of evenness)
+# - Joins slope estimates to bromeliad-level metadata (e.g., detritus weight, water volume)
+# - Regresses x against island size metrics to test whether rare species accumulate on larger islands
+# - Outputs plots of x vs island size and a summary stats table
+# ------------------------------------------------------------------------------
+
+
+# Load libraries
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(minpack.lm)
+library(ggplot2)
+library(MetBrewer)
+library(broom)
+library(patchwork)
+
+# ---------- Log-series fitting function ----------
+log_series_model <- function(df) {
+  if (nrow(df) < 5) {
+    return(tibble(x = NA_real_, C = NA_real_, n_ASVs = nrow(df), status = "Too few ASVs"))
+  }
+  
+  tryCatch({
+    fit <- nlsLM(proportion ~ C * (x^rank) / rank,
+                 data = df,
+                 start = list(x = 0.99, C = 1),
+                 control = nls.lm.control(maxiter = 500))
+    tibble(
+      x = coef(fit)["x"],
+      C = coef(fit)["C"],
+      n_ASVs = nrow(df),
+      status = "Success"
+    )
+  }, error = function(e) {
+    tibble(x = NA_real_, C = NA_real_, n_ASVs = nrow(df), status = "Fit failed")
+  })
+}
+
+# ---------- Pool replicates, compute proportions, ranks, fit model ----------
+fit_log_series_all <- function(asv_data, rep_metadata, locus_label, bro_ids) {
+  results <- list()
+  
+  for (bro in bro_ids) {
+    samples_this_bro <- rep_metadata %>% filter(Bro1 == bro)
+    
+    for (comp in unique(samples_this_bro$newCompartment)) {
+      sample_names <- samples_this_bro %>%
+        filter(newCompartment == comp) %>%
+        pull(sample)
+      
+      if (length(sample_names) == 0) next
+      
+      sub_data <- asv_data[, colnames(asv_data) %in% sample_names, drop = FALSE]
+      sub_data <- sub_data[rowSums(sub_data) > 0, , drop = FALSE]
+      
+      if (nrow(sub_data) == 0) next
+      
+      summed <- rowSums(sub_data)
+      df <- tibble(
+        ASV = names(summed),
+        count = summed
+      ) %>%
+        mutate(
+          proportion = count / sum(count),
+          rank = rank(-proportion, ties.method = "first")
+        )
+      
+      fit <- log_series_model(df) %>%
+        mutate(Bro1 = bro, Compartment = comp, Locus = locus_label)
+      
+      results[[paste0(bro, "_", comp)]] <- fit
+    }
+  }
+  
+  bind_rows(results)
+}
+
+# ---------- Run on all bromeliads ----------
+all_bros <- unique(fung_rep_dat$Bro1)
+
+fung_fits <- fit_log_series_all(fung_data, fung_rep_dat, "Fungi", all_bros)
+bact_fits <- fit_log_series_all(bact_data, bact_rep_dat, "Bacteria", all_bros)
+
+log_series_fits <- bind_rows(fung_fits, bact_fits)
+
+# ---------- Fix Bro1 formatting and join metadata ----------
+log_series_fits <- log_series_fits %>%
+  mutate(Bromeliad = paste0("SAR_BR_", gsub("BR", "", Bro1)))
+
+log_series_with_meta <- left_join(log_series_fits, bro_metadata, by = c("Bromeliad" = "Label"))
+
+# ---------- Rename metadata fields ----------
+log_series_with_meta <- log_series_with_meta %>%
+  rename(
+    Detritus.weight = `Dry.weight.detritus`,
+    Water.volume = `Water.volume...in.lab...mL.`,
+    Invert.weight = `Invert.Weight`
+  )
+
+# ---------- Plotting function ----------
+make_plot <- function(data, xvar, title, xlabel, color) {
+  lm_formula <- as.formula(paste("x ~", xvar))
+  lm_fit <- lm(lm_formula, data = data)
+  lm_summary <- glance(lm_fit)
+  r2 <- signif(lm_summary$r.squared, 2)
+  pval <- signif(lm_summary$p.value, 2)
+  
+  p <- ggplot(data, aes_string(x = xvar, y = "x")) +
+    geom_point(size = 2, color = color) +
+    labs(
+      title = title,
+      subtitle = paste0("r² = ", r2, ", p = ", pval),
+      x = xlabel,
+      y = "x estimate"
+    ) +
+    theme_minimal(base_size = 12)
+  
+  if (pval < 0.05) {
+    p <- p + geom_smooth(method = "lm", se = TRUE, color = color)
+  }
+  
+  return(p)
+}
+
+names(log_series_with_meta)
+
+# ---------- Group, plot, summarize ----------
+comp_locus_combos <- log_series_with_meta %>%
+  filter(status == "Success") %>%
+  distinct(Compartment, Locus)
+
+colors <- MetBrewer::met.brewer("Isfahan1", 6)
+plot_list <- list()
+stats_list <- list()
+i <- 1
+
+for (row in 1:nrow(comp_locus_combos)) {
+  comp <- comp_locus_combos$Compartment[row]
+  locus <- comp_locus_combos$Locus[row]
+  
+  df <- log_series_with_meta %>%
+    filter(Compartment == comp, Locus == locus, status == "Success")
+  
+  predictor <- case_when(
+    comp == "Detritus" ~ "Detritus.weight",
+    comp == "Water"    ~ "Water.volume",
+    comp == "Inverts"  ~ "Invert.weight"
+  )
+  
+  # Sanity check
+  if (!(predictor %in% names(df))) {
+    warning(paste("Predictor", predictor, "not in data for", comp, locus))
+    next
+  }
+  
+  lm_formula <- as.formula(paste("x ~", predictor))
+  lm_fit <- lm(lm_formula, data = df)
+  
+  lm_summary <- glance(lm_fit)
+  slope <- tidy(lm_fit) %>%
+    filter(term == predictor) %>%
+    pull(estimate)
+  
+  # Plot
+  p <- make_plot(df, predictor,
+                 title = paste(locus, "-", comp),
+                 xlabel = predictor,
+                 color = colors[i])
+  
+  plot_list[[paste(locus, comp)]] <- p
+  stats_list[[paste(locus, comp)]] <- tibble(
+    Compartment = comp,
+    Locus = locus,
+    Predictor = predictor,
+    r_squared = round(lm_summary$r.squared, 3),
+    p_value = signif(lm_summary$p.value, 3),
+    slope = round(slope, 5),
+    n = nrow(df)
+  )
+  
+  i <- i + 1
+}
+# ---------- Combine plots ----------
+final_plot <- wrap_plots(plot_list, nrow = 2)
+print(final_plot)
+
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/log_series_slopes_by_island_size.svg",
+       plot = final_plot, width = 14, height = 8)
+
+# ---------- Save stats table ----------
+lm_stats_table <- bind_rows(stats_list)
+print(lm_stats_table)
+
+write.csv(lm_stats_table,
+          "/Users/jasonbaer/Downloads/SAR Paper/log_series_lm_stats.csv",
+          row.names = FALSE)
+```
+
+Hill number log transformed
+```{r}
+library(iNEXT)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(purrr)
+library(stringr)
+library(broom)
+library(patchwork)
+library(MetBrewer)
+
+# Function to pool ASV counts by bro_and_comp
+pool_by_bro_and_comp <- function(asv_table, rep_metadata) {
+  rep_metadata <- rep_metadata %>%
+    mutate(bro_and_comp = paste(Bro1, newCompartment, sep = "_"))
+
+  asv_table <- asv_table[, colnames(asv_table) %in% rep_metadata$sample]
+
+  pooled <- rep_metadata %>%
+    select(sample, bro_and_comp) %>%
+    group_by(bro_and_comp) %>%
+    summarise(samples = list(sample), .groups = "drop") %>%
+    mutate(
+      counts = map(samples, ~ rowSums(asv_table[, .x, drop = FALSE]))
+    ) %>%
+    select(bro_and_comp, counts)
+
+  pooled_matrix <- do.call(cbind, setNames(pooled$counts, pooled$bro_and_comp))
+  as.data.frame(pooled_matrix)
+}
+
+# Pool fungi and bacteria
+fung_pooled <- pool_by_bro_and_comp(fung_data, fung_rep_dat)
+bact_pooled <- pool_by_bro_and_comp(bact_data, bact_rep_dat)
+
+# Hill q=1 calculator using Shannon entropy
+calc_q1_fast <- function(counts) {
+  p <- counts[counts > 0] / sum(counts)
+  exp(-sum(p * log(p)))
+}
+
+# Apply to pooled data
+fung_hill_q1 <- data.frame(
+  bro_and_comp = colnames(fung_pooled),
+  qD = apply(fung_pooled, 2, calc_q1_fast),
+  Locus = "Fungi"
+)
+
+bact_hill_q1 <- data.frame(
+  bro_and_comp = colnames(bact_pooled),
+  qD = apply(bact_pooled, 2, calc_q1_fast),
+  Locus = "Bacteria"
+)
+
+# Combine
+hill_q1_all <- bind_rows(fung_hill_q1, bact_hill_q1)
+
+# Extract bromeliad ID and compartment
+hill_q1_all <- hill_q1_all %>%
+  separate(bro_and_comp, into = c("Bro1", "Compartment"), sep = "_", remove = FALSE) %>%
+  mutate(Bromeliad = paste0("SAR_BR_", str_remove(Bro1, "BR")))
+
+# Join with metadata
+hill_q1_meta <- left_join(hill_q1_all, bro_metadata, by = c("Bromeliad" = "Label"))
+
+# Define mapping
+compartment_predictor <- c(
+  Detritus = "Dry.weight.detritus",
+  Water = "Water.volume...in.lab...mL.",
+  Inverts = "Invert.Weight"
+)
+
+# Pretty label mapping
+pretty_labels <- c(
+  "Dry.weight.detritus" = "Detritus weight [g]",
+  "Water.volume...in.lab...mL." = "Water volume [mL]",
+  "Invert.Weight" = "Invertebrate biomass [g]"
+)
+
+# Filter relevant compartments
+hill_q1_meta_filtered <- hill_q1_meta %>%
+  filter(
+    (Locus == "Fungi" & Compartment %in% c("Detritus", "Water")) |
+    (Locus == "Bacteria" & Compartment %in% c("Detritus", "Water"))
+  )
+
+# Assign MetBrewer Isfahan1 colors by Locus
+palette <- MetBrewer::met.brewer("Isfahan1")
+fungi_color <- palette[3]
+fungi_line  <- palette[2]
+bact_color  <- palette[5]
+bact_line   <- palette[6]
+
+# Build and plot models
+results <- hill_q1_meta_filtered %>%
+  mutate(RowIndex = row_number()) %>%
+  group_by(Compartment, Locus) %>%
+  nest() %>%
+  mutate(
+    Predictor = sapply(Compartment, function(c) compartment_predictor[[c]]),
+    data = map2(data, Predictor, ~ .x %>%
+                  mutate(log_predictor = log10(.x[[.y]] + 1e-6))),
+    model = map(data, ~ lm(qD ~ log_predictor, data = .x)),
+    summary = map(model, glance),
+    slope = map(model, ~ coef(.x)[["log_predictor"]]),
+    r2 = map_dbl(summary, "r.squared"),
+    pval = map_dbl(summary, "p.value"),
+    plot = pmap(
+      list(data, Locus, Compartment, Predictor, r2, pval),
+      function(df, loc, comp, pred, r2, pval) {
+        point_color <- if (loc == "Fungi") fungi_color else bact_color
+        line_color  <- if (loc == "Fungi") fungi_line  else bact_line
+        
+        p <- ggplot(df, aes(x = log_predictor, y = qD)) +
+          geom_point(size = 2, color = point_color) +
+          labs(
+            title = paste(loc, "-", comp),
+            subtitle = paste0("R² = ", signif(r2, 3), ", p = ", signif(pval, 3)),
+            x = paste0("log(", pretty_labels[pred], ")"),
+            y = "Hill number q=1"
+          ) +
+          theme_minimal()
+        
+        if (pval < 0.05) {
+          p <- p + geom_smooth(method = "lm", se = TRUE, color = line_color)
+        }
+        
+        return(p)
+      }
+    )
+  )
+
+# Combine plots
+final_plot <- wrap_plots(results$plot, nrow = 2)
+print(final_plot)
+
+# Save figure
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/hill_q1_by_island_size_log.svg",
+       plot = final_plot, width = 14, height = 8)
+
+# Save model summary
+lm_stats_table <- results %>%
+  mutate(r_squared = map_dbl(summary, "r.squared"),
+         p_value = map_dbl(summary, "p.value"),
+         slope = unlist(slope),
+         n = map_int(data, nrow)) %>%
+  select(Compartment, Locus, Predictor, r_squared, p_value, slope, n)
+
+write.csv(lm_stats_table,
+          "/Users/jasonbaer/Downloads/SAR Paper/hill_q1_lm_stats_log.csv",
+          row.names = FALSE)
+```
+
+
+same but not log transformed
+```{r}
+# -------------------------
+# Load required packages
+# -------------------------
+library(iNEXT)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(purrr)
+library(stringr)
+library(broom)
+library(patchwork)
+library(MetBrewer)
+
+# -------------------------
+# Function to pool ASV counts by bro_and_comp
+# -------------------------
+pool_by_bro_and_comp <- function(asv_table, rep_metadata) {
+  rep_metadata <- rep_metadata %>%
+    mutate(bro_and_comp = paste(Bro1, newCompartment, sep = "_"))
+
+  asv_table <- asv_table[, colnames(asv_table) %in% rep_metadata$sample]
+
+  pooled <- rep_metadata %>%
+    select(sample, bro_and_comp) %>%
+    group_by(bro_and_comp) %>%
+    summarise(samples = list(sample), .groups = "drop") %>%
+    mutate(
+      counts = map(samples, ~ rowSums(asv_table[, .x, drop = FALSE]))
+    ) %>%
+    select(bro_and_comp, counts)
+
+  pooled_matrix <- do.call(cbind, setNames(pooled$counts, pooled$bro_and_comp))
+  as.data.frame(pooled_matrix)
+}
+
+# -------------------------
+# Pool fungi and bacteria
+# -------------------------
+fung_pooled <- pool_by_bro_and_comp(fung_data, fung_rep_dat)
+bact_pooled <- pool_by_bro_and_comp(bact_data, bact_rep_dat)
+
+# -------------------------
+# Hill q=1 calculator using Shannon entropy
+# -------------------------
+calc_q1_fast <- function(counts) {
+  p <- counts[counts > 0] / sum(counts)
+  exp(-sum(p * log(p)))
+}
+
+# -------------------------
+# Apply to pooled data
+# -------------------------
+fung_hill_q1 <- data.frame(
+  bro_and_comp = colnames(fung_pooled),
+  qD = apply(fung_pooled, 2, calc_q1_fast),
+  Locus = "Fungi"
+)
+
+bact_hill_q1 <- data.frame(
+  bro_and_comp = colnames(bact_pooled),
+  qD = apply(bact_pooled, 2, calc_q1_fast),
+  Locus = "Bacteria"
+)
+
+# Combine
+hill_q1_all <- bind_rows(fung_hill_q1, bact_hill_q1)
+
+# -------------------------
+# Extract bromeliad ID and compartment
+# -------------------------
+hill_q1_all <- hill_q1_all %>%
+  separate(bro_and_comp, into = c("Bro1", "Compartment"), sep = "_", remove = FALSE) %>%
+  mutate(Bromeliad = paste0("SAR_BR_", str_remove(Bro1, "BR")))
+
+# -------------------------
+# Join with metadata
+# -------------------------
+hill_q1_meta <- left_join(hill_q1_all, bro_metadata, by = c("Bromeliad" = "Label"))
+
+# -------------------------
+# Define mapping
+# -------------------------
+compartment_predictor <- c(
+  Detritus = "Dry.weight.detritus",
+  Water = "Water.volume...in.lab...mL.",
+  Inverts = "Invert.Weight"
+)
+
+pretty_labels <- c(
+  "Dry.weight.detritus" = "Detritus weight [g]",
+  "Water.volume...in.lab...mL." = "Water volume [mL]",
+  "Invert.Weight" = "Invertebrate biomass [g]"
+)
+
+# -------------------------
+# Filter relevant compartments
+# -------------------------
+hill_q1_meta_filtered <- hill_q1_meta %>%
+  filter(
+    (Locus == "Fungi" & Compartment %in% c("Detritus", "Water")) |
+    (Locus == "Bacteria" & Compartment %in% c("Detritus", "Water"))
+  )
+
+# Assign colors
+palette <- MetBrewer::met.brewer("Isfahan1")
+fungi_color <- palette[3]
+fungi_line  <- palette[2]
+bact_color  <- palette[5]
+bact_line   <- palette[6]
+
+# -------------------------
+# Build and plot models
+# -------------------------
+results <- hill_q1_meta_filtered %>%
+  mutate(RowIndex = row_number()) %>%
+  group_by(Compartment, Locus) %>%
+  nest() %>%
+  mutate(
+    Predictor = sapply(Compartment, function(c) compartment_predictor[[c]]),
+    data = map2(data, Predictor, ~ .x %>%
+                  mutate(predictor = .x[[.y]])),
+    model = map(data, ~ lm(qD ~ predictor, data = .x)),
+    summary = map(model, glance),
+    slope = map(model, ~ coef(.x)[["predictor"]]),
+    r2 = map_dbl(summary, "r.squared"),
+    pval = map_dbl(summary, "p.value"),
+    plot = pmap(
+      list(data, Locus, Compartment, Predictor, r2, pval),
+      function(df, loc, comp, pred, r2, pval) {
+        point_color <- if (loc == "Fungi") fungi_color else bact_color
+        line_color  <- if (loc == "Fungi") fungi_line  else bact_line
+
+        p <- ggplot(df, aes(x = predictor, y = qD)) +
+          geom_point(size = 2, color = point_color) +
+          labs(
+            title = paste(loc, "-", comp),
+            subtitle = paste0("R² = ", signif(r2, 3), ", p = ", signif(pval, 3)),
+            x = pretty_labels[pred],
+            y = "Hill number q=1"
+          ) +
+          theme_minimal()
+
+        if (pval < 0.05) {
+          p <- p + geom_smooth(method = "lm", se = TRUE, color = line_color)
+        }
+
+        return(p)
+      }
+    )
+  )
+
+# -------------------------
+# Combine and save plot
+# -------------------------
+final_plot <- wrap_plots(results$plot, nrow = 2)
+print(final_plot)
+
+ggsave("/Users/jasonbaer/Downloads/SAR Paper/hill_q1_by_island_size_raw.svg",
+       plot = final_plot, width = 14, height = 8)
+
+# -------------------------
+# Save model summary
+# -------------------------
+lm_stats_table <- results %>%
+  mutate(r_squared = map_dbl(summary, "r.squared"),
+         p_value = map_dbl(summary, "p.value"),
+         slope = unlist(slope),
+         n = map_int(data, nrow)) %>%
+  select(Compartment, Locus, Predictor, r_squared, p_value, slope, n)
+
+write.csv(lm_stats_table,
+          "/Users/jasonbaer/Downloads/SAR Paper/hill_q1_lm_stats_raw.csv",
+          row.names = FALSE)
+```
+
+
+Updated hill number with q=0 and q=1
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+library(broom)
+library(stringr)
+
+# Diversity functions
+calc_q0 <- function(counts) sum(counts > 0)
+calc_q1 <- function(counts) {
+  p <- counts[counts > 0] / sum(counts)
+  exp(-sum(p * log(p)))
+}
+
+# Calculate q0 and q1
+compute_diversity <- function(asv_table, rep_metadata, locus_label) {
+  sample_names <- intersect(colnames(asv_table), rep_metadata$sample)
+  counts <- asv_table[, sample_names]
+
+  data.frame(
+    sample = sample_names,
+    q0 = apply(counts, 2, calc_q0),
+    q1 = apply(counts, 2, calc_q1)
+  ) %>%
+    left_join(rep_metadata, by = "sample") %>%
+    mutate(Locus = locus_label)
+}
+
+# Load data
+fung_data <- readRDS("/Users/jasonbaer/Downloads/SAR Paper/intermediates/culled_fung_asv_table_decontamed_nonpooled.rds")
+bact_data <- readRDS("/Users/jasonbaer/Downloads/SAR Paper/intermediates/culled_bact_asv_table_decontamed_nonpooled.rds")
+fung_rep_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/fung_replication_data_v2.rds")
+bact_rep_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/bact_replication_data_v2.rds")
+bro_metadata <- read.csv("/Users/jasonbaer/Downloads/SAR paper/metadata/sar_metadata_clean - Sheet1.csv")
+
+# Compute diversity
+fung_div <- compute_diversity(fung_data, fung_rep_dat, "Fungi")
+bact_div <- compute_diversity(bact_data, bact_rep_dat, "Bacteria")
+diversity_all <- bind_rows(fung_div, bact_div)
+
+# Merge and calculate area
+diversity_all <- diversity_all %>%
+  mutate(
+    Bromeliad = paste0("SAR_BR_", str_remove(Bro1, "BR")),
+    Compartment = case_when(
+      Compartment %in% c("WPool", "W02") ~ "Water",
+      Compartment == "D" ~ "Detritus",
+      TRUE ~ Compartment
+    )
+  ) %>%
+  left_join(bro_metadata %>% select(Label, `Dry.weight.detritus`, `Water.volume...in.lab...mL.`),
+            by = c("Bromeliad" = "Label")) %>%
+  mutate(
+    Area = case_when(
+      Compartment == "Detritus" ~ `Dry.weight.detritus`,
+      Compartment == "Water" ~ `Water.volume...in.lab...mL.`,
+      TRUE ~ NA_real_
+    ),
+    log_area = log10(Area + 1e-6)
+  )
+
+# Pivot to long format
+diversity_long <- diversity_all %>%
+  pivot_longer(cols = c(q0, q1), names_to = "q_order", values_to = "diversity") %>%
+  filter(!is.na(diversity), !is.na(log_area))
+
+# Fit models
+results <- diversity_long %>%
+  filter(Compartment %in% c("Detritus", "Water")) %>%
+  group_by(Locus, Compartment, q_order) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(diversity ~ log_area, data = .x)),
+    summary = map(model, glance),
+    slope = map_dbl(model, ~ coef(.x)["log_area"]),
+    r2 = map_dbl(summary, "r.squared"),
+    pval = map_dbl(summary, "p.value"),
+    plot = pmap(
+      list(data, Locus, Compartment, q_order, slope, r2, pval),
+      function(df, loc, comp, q, sl, r2, p) {
+        p_base <- ggplot(df, aes(x = log_area, y = diversity)) +
+          geom_point(size = 2.5, color = ifelse(loc == "Fungi", "#1b9e77", "#7570b3"), alpha = 0.8) +
+          labs(
+            title = paste(loc, "-", comp),
+            x = ifelse(comp == "Water", "Log10 Water Volume (mL)", "Log10 Detritus Weight (g)"),
+            y = ifelse(q == "q0", "Observed Richness (q=0)", "Hill Number (q=1)"),
+            subtitle = paste0("slope = ", signif(sl, 3), ", R² = ", signif(r2, 3), ", p = ", signif(p, 3))
+          ) +
+          theme_minimal(base_size = 14) +
+          theme(
+            plot.title = element_text(face = "bold"),
+            plot.subtitle = element_text(size = 11),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(size = 11)
+          )
+        
+        if (p < 0.05) {
+          p_base <- p_base + geom_smooth(method = "lm", se = TRUE, color = "gray30")
+        }
+        return(p_base)
+      }
+    )
+  )
+
+# Create separate plots
+q0_plot <- results %>%
+  filter(q_order == "q0") %>%
+  pull(plot) %>%
+  wrap_plots(ncol = 2) +
+  plot_annotation(title = "Observed Richness (q = 0)")
+
+q1_plot <- results %>%
+  filter(q_order == "q1") %>%
+  pull(plot) %>%
+  wrap_plots(ncol = 2) +
+  plot_annotation(title = "Hill Diversity (q = 1)")
+
+# Display
+print(q0_plot)
+print(q1_plot)
+
+# Save
+ggsave("q0_richness_plot_logx.svg", q0_plot, width = 10, height = 6)
+ggsave("q1_hill_number_plot_logx.svg", q1_plot, width = 10, height = 6)
+
+# Generate summary table
+model_summary_table <- results %>%
+  select(Locus, Compartment, q_order, slope, r2, pval) %>%
+  mutate(
+    slope = signif(slope, 3),
+    r2 = signif(r2, 3),
+    pval = signif(pval, 3),
+    signif_label = case_when(
+      pval < 0.001 ~ "***",
+      pval < 0.01 ~ "**",
+      pval < 0.05 ~ "*",
+      TRUE ~ "ns"
+    )
+  )
+
+# View table
+print(model_summary_table)
+
+# Save to CSV
+write.csv(model_summary_table, "model_summary_q0_q1_log_area.csv", row.names = FALSE)
+
+# Compare slopes of q0 and q1 using interaction model
+slope_comparison <- diversity_long %>%
+  filter(Compartment %in% c("Detritus", "Water")) %>%
+  group_by(Locus, Compartment) %>%
+  nest() %>%
+  mutate(
+    interaction_model = map(data, ~ lm(diversity ~ log_area * q_order, data = .x)),
+    interaction_summary = map(interaction_model, broom::tidy)
+  ) %>%
+  unnest(interaction_summary) %>%
+  filter(term == "log_area:q_orderq1") %>%
+  mutate(
+    signif_label = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01 ~ "**",
+      p.value < 0.05 ~ "*",
+      TRUE ~ "ns"
+    )
+  ) %>%
+  select(Locus, Compartment, estimate, std.error, statistic, p.value, signif_label)
+
+# View the table
+print(slope_comparison)
+
+# Save to CSV
+write.csv(slope_comparison, "q0_q1_slope_comparison.csv", row.names = FALSE)
+
+
+```
+
+This is just q=1 with all compartments. This figure was used in the supplement. 
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+library(broom)
+library(stringr)
+library(purrr)
+library(MetBrewer)
+
+# Diversity function
+calc_q1 <- function(counts) {
+  p <- counts[counts > 0] / sum(counts)
+  exp(-sum(p * log(p)))
+}
+
+# Compute Hill diversity (q=1)
+compute_diversity <- function(asv_table, rep_metadata, locus_label) {
+  sample_names <- intersect(colnames(asv_table), rep_metadata$sample)
+  counts <- asv_table[, sample_names]
+
+  data.frame(
+    sample = sample_names,
+    q1 = apply(counts, 2, calc_q1)
+  ) %>%
+    left_join(rep_metadata, by = "sample") %>%
+    mutate(Locus = locus_label)
+}
+
+# Load data
+fung_data <- readRDS("/Users/jasonbaer/Downloads/SAR Paper/intermediates/culled_fung_asv_table_decontamed_nonpooled.rds")
+bact_data <- readRDS("/Users/jasonbaer/Downloads/SAR Paper/intermediates/culled_bact_asv_table_decontamed_nonpooled.rds")
+fung_rep_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/fung_replication_data_v2.rds")
+bact_rep_dat <- readRDS("/Users/jasonbaer/Downloads/SAR paper/intermediates/bact_replication_data_v2.rds")
+bro_metadata <- read.csv("/Users/jasonbaer/Downloads/SAR paper/metadata/sar_metadata_clean - Sheet1.csv")
+
+# Compute q1 diversity
+fung_div <- compute_diversity(fung_data, fung_rep_dat, "Fungi")
+bact_div <- compute_diversity(bact_data, bact_rep_dat, "Bacteria")
+diversity_all <- bind_rows(fung_div, bact_div)
+
+# Merge area and metadata
+diversity_all <- diversity_all %>%
+  mutate(
+    Bromeliad = paste0("SAR_BR_", str_remove(Bro1, "BR"))
+  ) %>%
+  left_join(bro_metadata %>% select(Label, `Dry.weight.detritus`, `Water.volume...in.lab...mL.`),
+            by = c("Bromeliad" = "Label")) %>%
+  mutate(
+    log_water = log10(`Water.volume...in.lab...mL.` + 1e-6),
+    log_detritus = log10(`Dry.weight.detritus` + 1e-6)
+  )
+
+# Set color palette
+palette <- met.brewer("Isfahan1", 2)
+
+# Plotting function
+plot_diversity <- function(df, xvar, xlab, title, color) {
+  formula <- as.formula(paste("q1 ~", xvar))
+  model <- lm(formula, data = df)
+  summ <- glance(model)
+  slope <- coef(model)[[2]]
+  r2 <- summ$r.squared
+  pval <- summ$p.value
+  
+  p <- ggplot(df, aes_string(x = xvar, y = "q1")) +
+    geom_point(size = 2.5, alpha = 0.8, color = color) +
+    labs(
+      title = title,
+      x = xlab,
+      y = "Hill Diversity (q = 1)",
+      subtitle = paste0("slope = ", signif(slope, 3), 
+                        ", R² = ", signif(r2, 3), 
+                        ", p = ", signif(pval, 3))
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      plot.subtitle = element_text(size = 11),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 11)
+    )
+  
+  if (pval < 0.05) {
+    p <- p + geom_smooth(method = "lm", se = TRUE, color = "gray30")
+  }
+  
+  return(p)
+}
+
+# Function to extract model stats
+get_model_summary <- function(df, xvar, title) {
+  formula <- as.formula(paste("q1 ~", xvar))
+  model <- lm(formula, data = df)
+  summ <- glance(model)
+  
+  tibble(
+    Comparison = title,
+    Predictor = xvar,
+    Slope = coef(model)[[2]],
+    Intercept = coef(model)[[1]],
+    R2 = summ$r.squared,
+    P_value = summ$p.value
+  )
+}
+
+# Generate plots (in order)
+fung_det_plot <- diversity_all %>%
+  filter(Locus == "Fungi", newCompartment == "Detritus") %>%
+  plot_diversity("log_detritus", "Log10 Detritus Weight (g)", "Fungi - Detritus", palette[1])
+
+fung_water_plot <- diversity_all %>%
+  filter(Locus == "Fungi", newCompartment == "Water") %>%
+  plot_diversity("log_water", "Log10 Water Volume (mL)", "Fungi - Water", palette[1])
+
+fung_inv_water_plot <- diversity_all %>%
+  filter(Locus == "Fungi", newCompartment == "Inverts", !is.na(log_water)) %>%
+  plot_diversity("log_water", "Log10 Water Volume (mL)", "Fungi - Inverts (vs. Water)", palette[1])
+
+fung_inv_det_plot <- diversity_all %>%
+  filter(Locus == "Fungi", newCompartment == "Inverts", !is.na(log_detritus)) %>%
+  plot_diversity("log_detritus", "Log10 Detritus Weight (g)", "Fungi - Inverts (vs. Detritus)", palette[1])
+
+bact_det_plot <- diversity_all %>%
+  filter(Locus == "Bacteria", newCompartment == "Detritus") %>%
+  plot_diversity("log_detritus", "Log10 Detritus Weight (g)", "Bacteria - Detritus", palette[2])
+
+bact_water_plot <- diversity_all %>%
+  filter(Locus == "Bacteria", newCompartment == "Water") %>%
+  plot_diversity("log_water", "Log10 Water Volume (mL)", "Bacteria - Water", palette[2])
+
+bact_inv_water_plot <- diversity_all %>%
+  filter(Locus == "Bacteria", newCompartment == "Inverts", !is.na(log_water)) %>%
+  plot_diversity("log_water", "Log10 Water Volume (mL)", "Bacteria - Inverts (vs. Water)", palette[2])
+
+bact_inv_det_plot <- diversity_all %>%
+  filter(Locus == "Bacteria", newCompartment == "Inverts", !is.na(log_detritus)) %>%
+  plot_diversity("log_detritus", "Log10 Detritus Weight (g)", "Bacteria - Inverts (vs. Detritus)", palette[2])
+
+# Collect summaries
+summary_table <- bind_rows(
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Fungi", newCompartment == "Detritus"), 
+    "log_detritus", "Fungi - Detritus"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Fungi", newCompartment == "Water"), 
+    "log_water", "Fungi - Water"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Fungi", newCompartment == "Inverts", !is.na(log_water)), 
+    "log_water", "Fungi - Inverts (vs. Water)"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Fungi", newCompartment == "Inverts", !is.na(log_detritus)), 
+    "log_detritus", "Fungi - Inverts (vs. Detritus)"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Bacteria", newCompartment == "Detritus"), 
+    "log_detritus", "Bacteria - Detritus"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Bacteria", newCompartment == "Water"), 
+    "log_water", "Bacteria - Water"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Bacteria", newCompartment == "Inverts", !is.na(log_water)), 
+    "log_water", "Bacteria - Inverts (vs. Water)"
+  ),
+  get_model_summary(
+    diversity_all %>% filter(Locus == "Bacteria", newCompartment == "Inverts", !is.na(log_detritus)), 
+    "log_detritus", "Bacteria - Inverts (vs. Detritus)"
+  )
+)
+
+# Add FDR-corrected p-values
+summary_table <- summary_table %>%
+  mutate(FDR_P_value = p.adjust(P_value, method = "BH"))
+
+# View in console
+print(summary_table)
+
+# Optionally export
+write.csv(summary_table, "diversity_model_summary_table.csv", row.names = FALSE)
+
+# Final layout
+all_plots <- 
+  fung_det_plot + fung_water_plot + fung_inv_water_plot + fung_inv_det_plot +
+  bact_det_plot + bact_water_plot + bact_inv_water_plot + bact_inv_det_plot +
+  plot_layout(nrow = 2)
+
+# Display
+print(all_plots)
+
+# Save
+ggsave("q1_diversity_all_compartments_Isfahan.svg", all_plots, width = 14, height = 9)
+
+# View in console
+print(summary_table)
+
+# Optionally export
+write.csv(summary_table, "diversity_model_summary_table.csv", row.names = FALSE)
+
+
+```
+
+
